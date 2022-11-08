@@ -33,7 +33,11 @@ class AccelerationHistory  {
         }
     }
 
-    public function get() {
-        return Lang.format("samples: $1$, last Y: $2$", [_totalSamples, _lastY]);
+    public function getSampleRate() {
+        return _sampleRate;
+    }
+
+    public function getLastY() {
+        return _lastY;
     }
 }
