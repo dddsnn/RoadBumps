@@ -17,7 +17,7 @@ class View extends WatchUi.View {
     public function onLayout(dc as Dc) {
         _width = dc.getWidth();
         _height = dc.getHeight();
-        _dataTimer.start(method(:refresh), 100, true);
+        _dataTimer.start(method(:refresh), 1000, true);
     }
 
     public function refresh() as Void {
