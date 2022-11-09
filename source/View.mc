@@ -3,9 +3,19 @@ import Toybox.Lang;
 import Toybox.Timer;
 import Toybox.WatchUi;
 
+public function min(a, b) {
+    if (a <= b) {
+        return a;
+    }
+    return b;
+}
+
 class View extends WatchUi.View {
     private var _dataTimer as Timer.Timer;
     private var _history as AccelerationHistory;
+    private var _width as Lang.Number;
+    private var _height as Lang.Number;
+    private var _graphOffset as Lang.Number;
 
     public function initialize() {
         View.initialize();
@@ -14,6 +24,9 @@ class View extends WatchUi.View {
     }
 
     public function onLayout(dc as Dc) {
+        _width = dc.getWidth();
+        _height = dc.getHeight();
+        _graphOffset = 50;
         _dataTimer.start(method(:refresh), 1000, true);
     }
 
@@ -22,25 +35,44 @@ class View extends WatchUi.View {
     }
 
     public function onUpdate(dc as Dc) as Void {
-        var writer = new LineWriter(dc);
-        writer.write(Lang.format("sample rate: $1$", [_history.getSampleRate()]), Graphics.FONT_XTINY);
-    }
-}
-
-class LineWriter {
-    private var _dc as Graphics.Dc;
-    private var _center as Lang.Number;
-    private var _y as Lang.Number = 5;
-
-    public function initialize(dc as Graphics.Dc) {
-        _dc = dc;
-        _center = dc.getWidth() / 2;
-        _dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
-        _dc.clear();
+        resetColors(dc);
+        dc.clear();
+        drawInfo(dc);
+        drawGraph(dc);
     }
 
-    public function write(line as String, font as Graphics.FontType) {
-        _dc.drawText(_center, _y, font, line, Graphics.TEXT_JUSTIFY_CENTER);
-        _y += _dc.getFontHeight(font) + 5;
+    private function resetColors(dc as Dc) as Void {
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
+    }
+
+    private function drawInfo(dc as Graphics.Dc) {
+        var y = 5;
+        var font = Graphics.FONT_XTINY;
+        dc.drawText(_width / 2, y, font, Lang.format("sample rate: $1$", [_history.getSampleRate()]), Graphics.TEXT_JUSTIFY_CENTER);
+        y += dc.getFontHeight(font) + 5;
+    }
+
+    private function drawGraph(dc as Graphics.Dc) {
+        var barWidth = 3;
+        var numBars = _width / barWidth;
+        var graphHeight = _height - _graphOffset;
+        var centerY = (graphHeight / 2) + _graphOffset;
+        dc.setColor(Graphics.COLOR_RED, Graphics.COLOR_BLACK);
+        dc.fillRectangle(0, centerY, _width, 1);
+        resetColors(dc);
+        var reversedHistory = _history.reversed();
+        for (var i = 0; i < numBars; i++) {
+            var value = reversedHistory.next();
+            if (value == null) {
+                break;
+            }
+            var barHeight = (value * (graphHeight / 2)).abs() / 2000;
+            barHeight = min(barHeight, graphHeight / 2);
+            var y = centerY;
+            if (value > 0) {
+                y -= barHeight;
+            }
+            dc.fillRectangle(_width - ((i + 1) * barWidth), y, barWidth, barHeight);
+        }
     }
 }
