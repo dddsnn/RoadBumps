@@ -7,10 +7,10 @@ class View extends WatchUi.View {
     private var _dataTimer as Timer.Timer;
     private var _history as AccelerationHistory;
 
-    public function initialize(history as AccelerationHistory) {
+    public function initialize() {
         View.initialize();
         _dataTimer = new Timer.Timer();
-        _history = history;
+        _history = new AccelerationHistory(100);
     }
 
     public function onLayout(dc as Dc) {
@@ -24,7 +24,6 @@ class View extends WatchUi.View {
     public function onUpdate(dc as Dc) as Void {
         var writer = new LineWriter(dc);
         writer.write(Lang.format("sample rate: $1$", [_history.getSampleRate()]), Graphics.FONT_XTINY);
-        writer.write(Lang.format("last Y: $1$", [_history.getLastY()]), Graphics.FONT_MEDIUM);
     }
 }
 
