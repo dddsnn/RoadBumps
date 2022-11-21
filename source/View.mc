@@ -12,6 +12,8 @@ public function min(a, b) {
 
 class View extends WatchUi.View {
     const BAR_WIDTH as Lang.Number = 2;
+    const GRAPH_LIMIT_MILLI_G = 4000;
+
     private var _history as AccelerationHistory;
     private var _width as Lang.Number;
     private var _height as Lang.Number;
@@ -65,7 +67,7 @@ class View extends WatchUi.View {
                 break;
             }
             var adjustedValue = value + 1000;
-            var barHeight = (adjustedValue * (graphHeight / 2)).abs() / 2000;
+            var barHeight = (adjustedValue * (graphHeight / 2)).abs() / GRAPH_LIMIT_MILLI_G;
             barHeight = min(barHeight, graphHeight / 2);
             var y = centerY;
             if (adjustedValue > 0) {
