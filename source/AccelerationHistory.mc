@@ -27,12 +27,12 @@ class AccelerationHistory  {
         if (data.accelerometerData == null) {
             return;
         }
-        var ys = data.accelerometerData.y;
-        for (var i = 0; i < ys.size(); i++) {
-            _samples.append(ys[i]);
+        var zs = data.accelerometerData.z;
+        for (var i = 0; i < zs.size(); i++) {
+            _samples.append(zs[i]);
         }
         for (var i = 0; i < _callbacks.size(); i++) {
-            _callbacks[i].invoke(ys.size());
+            _callbacks[i].invoke(zs.size());
         }
     }
 
