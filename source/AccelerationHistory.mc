@@ -5,6 +5,7 @@ class AccelerationHistory  {
     private var _sampleRate as Lang.Number = null;
     private var _samples as RingBuffer;
     private var _totalSamples as Lang.Integer = 0;
+    private var _callbacks as Lang.Array<Lang.Method> = new[0];
 
     public function initialize(size as Lang.Number) {
         _sampleRate = Sensor.getMaxSampleRate();
@@ -30,6 +31,18 @@ class AccelerationHistory  {
         for (var i = 0; i < ys.size(); i++) {
             _samples.append(ys[i]);
         }
+        for (var i = 0; i < _callbacks.size(); i++) {
+            _callbacks[i].invoke(ys.size());
+        }
+    }
+
+    public function subscribe(callback as Lang.Method) {
+        var newCallbacks = new[_callbacks.size() + 1];
+        for (var i = 0; i < _callbacks.size(); i++) {
+            newCallbacks[i] = _callbacks[i];
+        }
+        newCallbacks[newCallbacks.size() - 1] = callback;
+        _callbacks = newCallbacks;
     }
 
     public function getSampleRate() {

@@ -6,7 +6,8 @@ class App extends Application.AppBase {
     }
 
     public function getInitialView() as Array<Views or InputDelegates>? {
-        var mainView = new View();
+        var history = new AccelerationHistory(200);
+        var mainView = new View(history);
         var viewDelegate = new Input(mainView);
         return [mainView, viewDelegate] as Array<Views or InputDelegates>;
     }

@@ -11,26 +11,25 @@ public function min(a, b) {
 }
 
 class View extends WatchUi.View {
-    private var _dataTimer as Timer.Timer;
+    const BAR_WIDTH as Lang.Number = 2;
     private var _history as AccelerationHistory;
     private var _width as Lang.Number;
     private var _height as Lang.Number;
     private var _graphOffset as Lang.Number;
 
-    public function initialize() {
+    public function initialize(history as AccelerationHistory) {
         View.initialize();
-        _dataTimer = new Timer.Timer();
-        _history = new AccelerationHistory(100);
+        _history = history;
+        _history.subscribe(method(:refresh));
     }
 
     public function onLayout(dc as Dc) {
         _width = dc.getWidth();
         _height = dc.getHeight();
         _graphOffset = 50;
-        _dataTimer.start(method(:refresh), 1000, true);
     }
 
-    public function refresh() as Void {
+    public function refresh(numNew as Lang.Number) as Void {
         WatchUi.requestUpdate();
     }
 
@@ -53,8 +52,7 @@ class View extends WatchUi.View {
     }
 
     private function drawGraph(dc as Graphics.Dc) {
-        var barWidth = 3;
-        var numBars = _width / barWidth;
+        var numBars = _width / BAR_WIDTH;
         var graphHeight = _height - _graphOffset;
         var centerY = (graphHeight / 2) + _graphOffset;
         dc.setColor(Graphics.COLOR_RED, Graphics.COLOR_BLACK);
@@ -72,7 +70,7 @@ class View extends WatchUi.View {
             if (value > 0) {
                 y -= barHeight;
             }
-            dc.fillRectangle(_width - ((i + 1) * barWidth), y, barWidth, barHeight);
+            dc.fillRectangle(_width - ((i + 1) * BAR_WIDTH), y, BAR_WIDTH, barHeight);
         }
     }
 }
