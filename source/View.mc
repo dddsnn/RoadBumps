@@ -64,10 +64,11 @@ class View extends WatchUi.View {
             if (value == null) {
                 break;
             }
-            var barHeight = (value * (graphHeight / 2)).abs() / 2000;
+            var adjustedValue = value + 1000;
+            var barHeight = (adjustedValue * (graphHeight / 2)).abs() / 2000;
             barHeight = min(barHeight, graphHeight / 2);
             var y = centerY;
-            if (value > 0) {
+            if (adjustedValue > 0) {
                 y -= barHeight;
             }
             dc.fillRectangle(_width - ((i + 1) * BAR_WIDTH), y, BAR_WIDTH, barHeight);
