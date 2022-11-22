@@ -15,6 +15,7 @@ class View extends WatchUi.View {
     const GRAPH_LIMIT_MILLI_G = 4000;
 
     private var _history as AccelerationHistory;
+    private var _isRecording as Boolean = false;
     private var _width as Lang.Number;
     private var _height as Lang.Number;
     private var _graphOffset as Lang.Number;
@@ -51,6 +52,10 @@ class View extends WatchUi.View {
         var font = Graphics.FONT_XTINY;
         dc.drawText(_width / 2, y, font, Lang.format("sample rate: $1$", [_history.getSampleRate()]), Graphics.TEXT_JUSTIFY_CENTER);
         y += dc.getFontHeight(font) + 5;
+        if (_isRecording) {
+            dc.drawText(_width / 2, y, font, "rec", Graphics.TEXT_JUSTIFY_CENTER);
+            y += dc.getFontHeight(font) + 5;
+        }
     }
 
     private function drawGraph(dc as Graphics.Dc) {
@@ -75,5 +80,9 @@ class View extends WatchUi.View {
             }
             dc.fillRectangle(_width - ((i + 1) * BAR_WIDTH), y, BAR_WIDTH, barHeight);
         }
+    }
+
+    public function setRecordingStatus(isRecording as Boolean) {
+        _isRecording = isRecording;
     }
 }

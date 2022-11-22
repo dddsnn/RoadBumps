@@ -6,6 +6,8 @@
             <iq:product id="edge530"/>
         </iq:products>
         <iq:permissions>
+            <iq:uses-permission id="Fit"/>
+            <iq:uses-permission id="FitContributor"/>
             <iq:uses-permission id="Sensor"/>
         </iq:permissions>
         <iq:languages>
