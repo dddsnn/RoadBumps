@@ -1,4 +1,5 @@
 import Toybox.WatchUi;
+import Toybox.System;
 
 class Input extends WatchUi.InputDelegate {
     private var _view as View;
@@ -11,9 +12,14 @@ class Input extends WatchUi.InputDelegate {
     }
 
     public function onKey(keyEvent as WatchUi.KeyEvent) as Boolean {
-        if (keyEvent.getKey() == WatchUi.KEY_START) {
+        switch (keyEvent.getKey()) {
+        case WatchUi.KEY_START:
             var isRecording = _recorder.toggleRecording();
             _view.setRecordingStatus(isRecording);
+            break;
+        case WatchUi.KEY_ESC:
+            System.exit();
+            break;
         }
         return true;
     }
