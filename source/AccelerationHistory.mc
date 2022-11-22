@@ -49,6 +49,10 @@ class AccelerationHistory  {
         return _sampleRate;
     }
 
+    public function iter() as RingBufferIterator {
+        return new RingBufferIterator(_samples);
+    }
+
     public function reversed() as RingBufferReverseIterator {
         return new RingBufferReverseIterator(_samples);
     }
@@ -81,6 +85,25 @@ class RingBuffer {
 
     public function get(idx as Lang.Number) {
         return _buffer[(_start + idx) % _maxSize];
+    }
+}
+
+class RingBufferIterator {
+    private var _ringBuffer as RingBuffer;
+    private var _currentIdx as Lang.Number;
+
+    public function initialize(ringBuffer as RingBuffer) {
+        _ringBuffer = ringBuffer;
+        _currentIdx = 0;
+    }
+
+    public function next() {
+        if (_currentIdx >= _ringBuffer.size()) {
+            return null;
+        }
+        var element = _ringBuffer.get(_currentIdx);
+        _currentIdx++;
+        return element;
     }
 }
 
