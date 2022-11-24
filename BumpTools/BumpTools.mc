@@ -3,6 +3,13 @@ import Toybox.Lang;
 import Toybox.Sensor;
 
 module BumpTools {
+    public function min(a, b) {
+        if (a <= b) {
+            return a;
+        }
+        return b;
+    }
+
     class AccelerationHistory  {
         private var _sampleRate as Lang.Number = null;
         private var _samples as RingBuffer;
@@ -187,6 +194,56 @@ module BumpTools {
                 _fields = new[0];
                 _session = null;
                 return false;
+            }
+        }
+    }
+
+    class AccelerationGraph {
+        private var _history as AccelerationHistory;
+        private var _xOffset as Lang.Number;
+        private var _width as Lang.Number;
+        private var _height as Lang.Number;
+        private var _barWidth as Lang.Number;
+        private var _graphLimitMilliG as Lang.Number;
+        private var _numBars as Lang.Number;
+        private var _centerY as Lang.Number;
+
+        public function initialize(
+            history as AccelerationHistory, xOffset as Lang.Number,
+            yOffset as Lang.Number, width as Lang.Number,
+            height as Lang.Number, barWidth as Lang.Number,
+            graphLimitMilliG as Lang.Number) {
+            _history = history;
+            _xOffset = xOffset;
+            _width = width;
+            _height = height;
+            _barWidth = barWidth;
+            _graphLimitMilliG = graphLimitMilliG;
+            _numBars = (_width - xOffset) / barWidth;
+            _centerY = (_height / 2) + yOffset;
+        }
+
+        public function draw(dc as Graphics.Dc) {
+            dc.setColor(Graphics.COLOR_RED, Graphics.COLOR_BLACK);
+            dc.fillRectangle(_xOffset, _centerY, _width, 1);
+            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
+            var reversedHistory = _history.reversed();
+            for (var i = 0; i < _numBars; i++) {
+                var value = reversedHistory.next();
+                if (value == null) {
+                    break;
+                }
+                // Adjust for normal gravity, display idle as 0.
+                var adjustedValue = value + 1000;
+                var barHeight = (
+                    (adjustedValue * (_height / 2)).abs() / _graphLimitMilliG);
+                barHeight = min(barHeight, _height / 2);
+                var y = _centerY;
+                if (adjustedValue > 0) {
+                    y -= barHeight;
+                }
+                dc.fillRectangle(
+                    _width - ((i + 1) * _barWidth), y, _barWidth, barHeight);
             }
         }
     }

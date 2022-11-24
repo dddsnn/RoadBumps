@@ -3,13 +3,6 @@ import Toybox.Lang;
 import Toybox.Timer;
 import Toybox.WatchUi;
 
-public function min(a, b) {
-    if (a <= b) {
-        return a;
-    }
-    return b;
-}
-
 class View extends WatchUi.View {
     const BAR_WIDTH as Lang.Number = 2;
     const GRAPH_LIMIT_MILLI_G = 4000;
@@ -17,8 +10,7 @@ class View extends WatchUi.View {
     private var _history as AccelerationHistory;
     private var _isRecording as Boolean = false;
     private var _width as Lang.Number;
-    private var _height as Lang.Number;
-    private var _graphOffset as Lang.Number;
+    private var _graph as BumpTools.AccelerationGraph?;
 
     public function initialize(history as AccelerationHistory) {
         View.initialize();
@@ -28,8 +20,9 @@ class View extends WatchUi.View {
 
     public function onLayout(dc as Dc) {
         _width = dc.getWidth();
-        _height = dc.getHeight();
-        _graphOffset = 50;
+        _graph = new BumpTools.AccelerationGraph(
+            _history, 0, 50, _width, dc.getHeight() - 50, BAR_WIDTH,
+            GRAPH_LIMIT_MILLI_G);
     }
 
     public function refresh(numNew as Lang.Number) as Void {
@@ -40,7 +33,7 @@ class View extends WatchUi.View {
         resetColors(dc);
         dc.clear();
         drawInfo(dc);
-        drawGraph(dc);
+        _graph.draw(dc);
     }
 
     private function resetColors(dc as Dc) as Void {
@@ -55,30 +48,6 @@ class View extends WatchUi.View {
         if (_isRecording) {
             dc.drawText(_width / 2, y, font, "rec", Graphics.TEXT_JUSTIFY_CENTER);
             y += dc.getFontHeight(font) + 5;
-        }
-    }
-
-    private function drawGraph(dc as Graphics.Dc) {
-        var numBars = _width / BAR_WIDTH;
-        var graphHeight = _height - _graphOffset;
-        var centerY = (graphHeight / 2) + _graphOffset;
-        dc.setColor(Graphics.COLOR_RED, Graphics.COLOR_BLACK);
-        dc.fillRectangle(0, centerY, _width, 1);
-        resetColors(dc);
-        var reversedHistory = _history.reversed();
-        for (var i = 0; i < numBars; i++) {
-            var value = reversedHistory.next();
-            if (value == null) {
-                break;
-            }
-            var adjustedValue = value + 1000;
-            var barHeight = (adjustedValue * (graphHeight / 2)).abs() / GRAPH_LIMIT_MILLI_G;
-            barHeight = min(barHeight, graphHeight / 2);
-            var y = centerY;
-            if (adjustedValue > 0) {
-                y -= barHeight;
-            }
-            dc.fillRectangle(_width - ((i + 1) * BAR_WIDTH), y, BAR_WIDTH, barHeight);
         }
     }
 
