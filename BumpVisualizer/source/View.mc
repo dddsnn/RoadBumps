@@ -43,15 +43,10 @@ class View extends WatchUi.View {
     private function drawInfo(dc as Graphics.Dc) {
         var y = 5;
         var font = Graphics.FONT_XTINY;
-        dc.drawText(_width / 2, y, font, Lang.format("sample rate: $1$", [_history.getSampleRate()]), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(
+            _width / 2, y, font,
+            Lang.format("sample rate: $1$", [_history.getSampleRate()]),
+            Graphics.TEXT_JUSTIFY_CENTER);
         y += dc.getFontHeight(font) + 5;
-        if (_isRecording) {
-            dc.drawText(_width / 2, y, font, "rec", Graphics.TEXT_JUSTIFY_CENTER);
-            y += dc.getFontHeight(font) + 5;
-        }
-    }
-
-    public function setRecordingStatus(isRecording as Boolean) {
-        _isRecording = isRecording;
     }
 }
