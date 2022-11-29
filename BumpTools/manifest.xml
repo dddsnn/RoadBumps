@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <iq:manifest version="3" xmlns:iq="http://www.garmin.com/xml/connectiq">
     <iq:barrel id="6935a20d-09d7-4b37-bace-2f7dcfa391e4" module="BumpTools" version="0.1.0" minApiLevel="2.4.0">
         <iq:products>
@@ -6,14 +7,13 @@
         <iq:permissions>
             <iq:uses-permission id="Fit"/>
             <iq:uses-permission id="FitContributor"/>
+            <iq:uses-permission id="Positioning"/>
             <iq:uses-permission id="Sensor"/>
         </iq:permissions>
         <iq:languages>
             <iq:language>eng</iq:language>
         </iq:languages>
-        <iq:barrels>
-        </iq:barrels>
-        <iq:annotations>
-        </iq:annotations>
+        <iq:barrels/>
+        <iq:annotations/>
     </iq:barrel>
 </iq:manifest>
