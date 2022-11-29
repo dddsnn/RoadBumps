@@ -137,9 +137,12 @@ module BumpTools {
         }
     }
 
-    function sampleAsInt16(sample as Lang.Number) as Lang.Number {
-        if (sample < -32768) {
+    function sampleAsInt16(sample as Lang.Number?) as Lang.Number {
+        if (sample == null) {
             return -32768;
+        }
+        if (sample < -32767) {
+            return -32767;
         }
         if (sample > 32767) {
             return 32767;
@@ -171,14 +174,11 @@ module BumpTools {
         public function onAccel(numNew as Lang.Number) as Void {
             var historyIter = _history.iter();
             for (var i = 0; i < _accelFields.size(); i++) {
-                var fieldData = new Array<Lang.Number>[SAMPLES_PER_FIELD];
+                var fieldData = new Array<Lang.Number?>[SAMPLES_PER_FIELD];
                 for (var j = 0; j < SAMPLES_PER_FIELD; j++) {
-                    var sample = historyIter.next();
-                    if (sample == null) {
-                        _accelFields[i].setData(fieldData);
-                        return;
-                    }
-                    fieldData[j] = sampleAsInt16(sample);
+                    // The iterator returns nulls when empty. Those will be
+                    // encoded with a special value.
+                    fieldData[j] = sampleAsInt16(historyIter.next());
                 }
                 _accelFields[i].setData(fieldData);
             }
