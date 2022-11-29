@@ -34,6 +34,10 @@ module BumpTools {
             Sensor.registerSensorDataListener(method(:append), options);
         }
 
+        public function close() as Void {
+            Sensor.unregisterSensorDataListener();
+        }
+
         public function append(data as Sensor.SensorData) {
             if (data.accelerometerData == null) {
                 return;
