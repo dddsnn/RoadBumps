@@ -1,0 +1,6 @@
+version: "3.9"
+
+services:
+  analyze:
+    build: src
+    command: python analyze.py
