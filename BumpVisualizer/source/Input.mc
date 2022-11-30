@@ -14,10 +14,13 @@ class Input extends WatchUi.InputDelegate {
     public function onKey(keyEvent as WatchUi.KeyEvent) as Boolean {
         switch (keyEvent.getKey()) {
         case WatchUi.KEY_START:
-            var isRecording = _recorder.toggleRecording();
-            _view.setRecordingStatus(isRecording);
+            _recorder.toggleRecording();
+            _view.setRecordingStatus(_recorder.isRecording());
             break;
         case WatchUi.KEY_ESC:
+            if (_recorder.isRecording()) {
+                break;
+            }
             System.exit();
             break;
         }

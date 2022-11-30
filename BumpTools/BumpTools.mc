@@ -205,10 +205,9 @@ module BumpTools {
             }
         }
 
-        public function toggleRecording() as Boolean {
+        public function toggleRecording() as Void {
             if (_session == null) {
                 createSession();
-                return true;
             } else {
                 _session.stop();
                 _session.save();
@@ -218,8 +217,11 @@ module BumpTools {
                 _speedField = null;
                 _accelFields = new[0];
                 _session = null;
-                return false;
             }
+        }
+
+        public function isRecording() as Boolean {
+            return _session != null;
         }
 
         private function createSession() {
