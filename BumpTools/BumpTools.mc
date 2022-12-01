@@ -3,6 +3,7 @@ import Toybox.Lang;
 import Toybox.Math;
 import Toybox.Position;
 import Toybox.Sensor;
+import Toybox.System;
 
 module BumpTools {
     public function min(a, b) {
@@ -64,8 +65,9 @@ module BumpTools {
             return _sampleRate;
         }
 
-        public function iter() as RingBufferIterator {
-            return new RingBufferIterator(_samples);
+        public function iterateLastNSamples(numSamples as Lang.Number)
+                as LastNSamplesRingBufferIterator {
+            return new LastNSamplesRingBufferIterator(_samples, numSamples);
         }
 
         public function reversed() as RingBufferReverseIterator {
@@ -99,21 +101,30 @@ module BumpTools {
         }
 
         public function get(idx as Lang.Number) {
+            while (idx < 0) {
+                idx += _maxSize;
+            }
             return _buffer[(_start + idx) % _maxSize];
         }
     }
 
-    class RingBufferIterator {
+    class LastNSamplesRingBufferIterator {
         private var _ringBuffer as RingBuffer;
         private var _currentIdx as Lang.Number;
 
-        public function initialize(ringBuffer as RingBuffer) {
+        public function initialize(
+            ringBuffer as RingBuffer, numSamples as Lang.Number) {
+                if (numSamples < 0 || numSamples > ringBuffer.size()) {
+                    throw new Lang.InvalidValueException(
+                        "Number of samples must be between 0 and ring buffer "
+                        + "size.");
+                }
             _ringBuffer = ringBuffer;
-            _currentIdx = 0;
+            _currentIdx = -numSamples;
         }
 
         public function next() {
-            if (_currentIdx >= _ringBuffer.size()) {
+            if (_currentIdx >= 0) {
                 return null;
             }
             var element = _ringBuffer.get(_currentIdx);
@@ -176,7 +187,7 @@ module BumpTools {
         }
 
         public function onAccel(numNew as Lang.Number) as Void {
-            var historyIter = _history.iter();
+            var historyIter = _history.iterateLastNSamples(numNew);
             for (var i = 0; i < _accelFields.size(); i++) {
                 var fieldData = new Array<Lang.Number?>[SAMPLES_PER_FIELD];
                 for (var j = 0; j < SAMPLES_PER_FIELD; j++) {
