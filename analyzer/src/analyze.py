@@ -7,12 +7,13 @@ import re
 import sys
 
 import fitparse
+import matplotlib.pyplot as plt
 
 logger = None
 
 
 def setup_logging():
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
 
 
 class ParseError(Exception):
@@ -60,7 +61,7 @@ class Track:
                 continue
             cls._assert_valid_accel_fields(accel_fields)
             accels = cls._extract_accels(accel_fields)
-            for accel in accels:
+            for accel in cls._adjusted_accels(accels):
                 positions.append(Position(ts, lon, lat, speed, accel))
         cls._check_consecutive_positions(positions)
         return cls(positions)
@@ -129,6 +130,10 @@ class Track:
         return raw_accel
 
     @classmethod
+    def _adjusted_accels(cls, accels):
+        return [a + 1000 for a in accels]
+
+    @classmethod
     def _check_consecutive_positions(cls, positions):
         for p1, p2 in it.pairwise(positions):
             same_ts = p1.ts == p2.ts
@@ -146,7 +151,28 @@ def main():
 
 
 def analyze_files(file_path):
+    if not file_path.endswith('.fit'):
+        raise ValueError(f'{file_path} doesn\'t look like a .fit file.')
+    file_base_path = file_path[:-4]
     track = Track.from_path(file_path)
+    plot_track(track)
+
+
+def plot_track(track):
+    tss = [p.ts for p in track.positions]
+    accels = [p.accel for p in track.positions]
+    speeds_kph = [mps_to_kph(p.speed) for p in track.positions]
+    fig = plt.figure()
+    axess = fig.subplots(2, 1, sharex=True, height_ratios=[3, 1])
+    axess[0].plot(tss, accels, color='blue')
+    axess[0].yaxis.set_label_text('mg')
+    axess[1].plot(tss, speeds_kph, color='red')
+    axess[1].yaxis.set_label_text('km/h')
+    plt.show()
+
+
+def mps_to_kph(mps):
+    return mps * 3.6
 
 
 if __name__ == '__main__':
