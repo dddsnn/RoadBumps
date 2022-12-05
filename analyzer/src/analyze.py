@@ -6,8 +6,12 @@ import math
 import re
 import sys
 
+import cartopy.crs
+import cartopy.io.img_tiles
+import cartopy.mpl.geoaxes
 import fitparse
 import matplotlib.pyplot as plt
+import shapely.geometry
 
 logger = None
 
@@ -44,25 +48,30 @@ class Track:
         positions = []
         for message in fit_file.messages:
             ts = cls._field_value(message, 'timestamp', datetime.datetime)
-            lon = cls._field_value(message, 'position_long')
-            lat = cls._field_value(message, 'position_lat')
+            lon_semicircles = cls._field_value(message, 'position_long')
+            lat_semicircles = cls._field_value(message, 'position_lat')
             speed = cls._field_value(message, 'enhanced_speed')
             accel_fields = sorted((
                 field for field in message.fields
                 if field.name.startswith('accel')),
                                   key=cls._accel_field_bounds)
             accel_fields = accel_fields or None
-            if not all(v is not None
-                       for v in [ts, lon, lat, speed, accel_fields]):
-                if any(v is not None for v in [lon, lat, speed, accel_fields]):
+            data_fields = [
+                lon_semicircles, lat_semicircles, speed, accel_fields]
+            if not all(v is not None for v in [ts] + data_fields):
+                if any(v is not None for v in data_fields):
                     logger.warning(
                         'Not all expected values were present, but some were '
-                        f'({values}).')
+                        f'({data_fields}).')
                 continue
             cls._assert_valid_accel_fields(accel_fields)
             accels = cls._extract_accels(accel_fields)
             for accel in cls._adjusted_accels(accels):
-                positions.append(Position(ts, lon, lat, speed, accel))
+                positions.append(
+                    Position(
+                        ts, cls._semicircles_to_deg(lon_semicircles),
+                        cls._semicircles_to_deg(lat_semicircles), speed,
+                        accel))
         cls._check_consecutive_positions(positions)
         return cls(positions)
 
@@ -134,6 +143,10 @@ class Track:
         return [a + 1000 for a in accels]
 
     @classmethod
+    def _semicircles_to_deg(cls, semicircles):
+        return math.degrees((semicircles * math.pi) / 0x80000000)
+
+    @classmethod
     def _check_consecutive_positions(cls, positions):
         for p1, p2 in it.pairwise(positions):
             same_ts = p1.ts == p2.ts
@@ -142,6 +155,11 @@ class Track:
                 logger.warning(
                     'Position timestamps don\'t have equal or consecutive '
                     f'timestamps: {p1.ts} - {p2.ts}.')
+
+    @property
+    def linestring(self):
+        return shapely.geometry.LineString(
+            (p.lon, p.lat) for p in self.positions)
 
 
 def main():
@@ -155,10 +173,10 @@ def analyze_files(file_path):
         raise ValueError(f'{file_path} doesn\'t look like a .fit file.')
     file_base_path = file_path[:-4]
     track = Track.from_path(file_path)
-    plot_track(track)
+    plot_track_map(track)
 
 
-def plot_track(track):
+def plot_track_accel_and_speed(track):
     tss = [p.ts for p in track.positions]
     accels = [p.accel for p in track.positions]
     speeds_kph = [mps_to_kph(p.speed) for p in track.positions]
@@ -169,6 +187,46 @@ def plot_track(track):
     axess[1].plot(tss, speeds_kph, color='red')
     axess[1].yaxis.set_label_text('km/h')
     plt.show()
+
+
+def plot_track_map(track):
+    line = track.linestring
+    fig = plt.figure()
+    projection = cartopy.crs.Mercator()
+    axes = fig.add_axes((0, 0, 1, 1),
+                        axes_class=geo_axes_class_with_projection(projection))
+    extent = buffered_bounds(line.bounds, 0.1)
+    axes.set_extent(extent, crs=projection.as_geodetic())
+    axes.add_image(cartopy.io.img_tiles.OSM(), zoom_level_for_extent(*extent))
+    axes.add_geometries([line], projection.as_geodetic(), linewidth=3,
+                        edgecolor='black', facecolor=(0, 0, 0, 0))
+    plt.show()
+
+
+def geo_axes_class_with_projection(projection):
+    class GeoAxes(cartopy.mpl.geoaxes.GeoAxes):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs, projection=projection)
+
+    return GeoAxes
+
+
+def zoom_level_for_extent(min_lon, max_lon, min_lat, max_lat):
+    lon_fraction = (max_lon - min_lon) / 90
+    lat_fraction = (max_lat - min_lat) / 180
+    doublings = math.log2(1 / max(lon_fraction, lat_fraction))
+    # Zoom level 2 as base for the entire world.
+    return 2 + math.ceil(doublings)
+
+
+def buffered_bounds(bounds, buffer_fraction):
+    min_x, min_y, max_x, max_y = bounds
+    width = max_x - min_x
+    height = max_y - min_y
+    buffer_x = width * buffer_fraction
+    buffer_y = height * buffer_fraction
+    return (
+        min_x - buffer_x, max_x + buffer_x, min_y - buffer_y, max_y + buffer_y)
 
 
 def mps_to_kph(mps):
