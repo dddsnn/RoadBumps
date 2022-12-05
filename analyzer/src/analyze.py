@@ -190,7 +190,11 @@ def plot_track_dynamics(track):
     accel_axes.yaxis.set_label_text('mg')
     speed_axes.plot(tss, speeds_kph, color='black')
     speed_axes.yaxis.set_label_text('km/h')
-    accel_analysis_axes.plot(tss, avg_accels, color='blue')
+    accel_analysis_axes.plot(tss, avg_accels, color='black')
+    accel_analysis_axes.plot(
+        tss, attenuated_by_speed(avg_accels, speeds_kph), color='blue')
+    accel_analysis_axes.plot(
+        tss, low_pass_absolute_accels(accels, 4000), color='red')
     accel_analysis_axes.yaxis.set_label_text('mg')
     plt.show()
 
@@ -205,6 +209,25 @@ def rolling_average_absolute_accels(positions, window_duration):
             window.popleft()
         absolute_accels.append(sum(abs(p.accel) for p in window) / len(window))
     return absolute_accels
+
+
+def attenuated_by_speed(accels, speeds_kph):
+    attenuated_accels = []
+    for accel, speed in zip(accels, speeds_kph):
+        fraction_on_the_way_to_40 = min(speed, 40) / 40
+        factor = 1 - (fraction_on_the_way_to_40**2 * 0.75)
+        attenuated_accels.append(factor * accel)
+    return attenuated_accels
+
+
+def low_pass_absolute_accels(accels, min_accel):
+    filtered_accels = []
+    for accel in accels:
+        if accel >= min_accel:
+            filtered_accels.append(accel)
+        else:
+            filtered_accels.append(0)
+    return filtered_accels
 
 
 def plot_track_map(track):
