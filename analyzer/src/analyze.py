@@ -174,18 +174,29 @@ def analyze_files(file_path):
         raise ValueError(f'{file_path} doesn\'t look like a .fit file.')
     file_base_path = file_path[:-4]
     track = Track.from_path(file_path)
-    plot_track_dynamics(track)
+    plot_track(track)
 
 
-def plot_track_dynamics(track):
+def plot_track(track):
+    figure = plt.figure()
+    gridspec = figure.add_gridspec(
+        3, 2, figure=figure, height_ratios=[2, 1, 2])
+    add_dynamics_subplots(
+        track, figure, [gridspec[0, 0:1], gridspec[1, 0:1], gridspec[2, 0:1]])
+    add_map_subplot(track, figure, gridspec[0:, 1])
+    plt.show()
+
+
+def add_dynamics_subplots(track, figure, gridspecs):
+    assert len(gridspecs) == 3
     tss = [p.ts for p in track.positions]
     accels = [p.accel for p in track.positions]
     speeds_kph = [mps_to_kph(p.speed) for p in track.positions]
     avg_accels = rolling_average_absolute_accels(
         track.positions, datetime.timedelta(seconds=10))
-    fig = plt.figure()
-    axess = fig.subplots(3, 1, sharex=True, height_ratios=[2, 1, 2])
-    accel_axes, speed_axes, accel_analysis_axes = axess
+    accel_axes = figure.add_subplot(gridspecs[0])
+    speed_axes = figure.add_subplot(gridspecs[1], sharex=accel_axes)
+    accel_analysis_axes = figure.add_subplot(gridspecs[2], sharex=accel_axes)
     accel_axes.plot(tss, accels, color='black')
     accel_axes.yaxis.set_label_text('mg')
     speed_axes.plot(tss, speeds_kph, color='black')
@@ -196,7 +207,6 @@ def plot_track_dynamics(track):
     accel_analysis_axes.plot(
         tss, low_pass_absolute_accels(accels, 4000), color='red')
     accel_analysis_axes.yaxis.set_label_text('mg')
-    plt.show()
 
 
 def rolling_average_absolute_accels(positions, window_duration):
@@ -230,18 +240,16 @@ def low_pass_absolute_accels(accels, min_accel):
     return filtered_accels
 
 
-def plot_track_map(track):
+def add_map_subplot(track, figure, gridspec):
     line = track.linestring
-    fig = plt.figure()
     projection = cartopy.crs.Mercator()
-    axes = fig.add_axes((0, 0, 1, 1),
-                        axes_class=geo_axes_class_with_projection(projection))
+    axes = figure.add_subplot(
+        gridspec, axes_class=geo_axes_class_with_projection(projection))
     extent = buffered_bounds(line.bounds, 0.1)
     axes.set_extent(extent, crs=projection.as_geodetic())
     axes.add_image(cartopy.io.img_tiles.OSM(), zoom_level_for_extent(*extent))
     axes.add_geometries([line], projection.as_geodetic(), linewidth=3,
                         edgecolor='black', facecolor=(0, 0, 0, 0))
-    plt.show()
 
 
 def geo_axes_class_with_projection(projection):
