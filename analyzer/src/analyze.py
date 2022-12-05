@@ -1,3 +1,4 @@
+import collections
 import dataclasses as dc
 import datetime
 import itertools as it
@@ -173,20 +174,37 @@ def analyze_files(file_path):
         raise ValueError(f'{file_path} doesn\'t look like a .fit file.')
     file_base_path = file_path[:-4]
     track = Track.from_path(file_path)
-    plot_track_map(track)
+    plot_track_dynamics(track)
 
 
-def plot_track_accel_and_speed(track):
+def plot_track_dynamics(track):
     tss = [p.ts for p in track.positions]
     accels = [p.accel for p in track.positions]
     speeds_kph = [mps_to_kph(p.speed) for p in track.positions]
+    avg_accels = rolling_average_absolute_accels(
+        track.positions, datetime.timedelta(seconds=10))
     fig = plt.figure()
-    axess = fig.subplots(2, 1, sharex=True, height_ratios=[3, 1])
-    axess[0].plot(tss, accels, color='blue')
-    axess[0].yaxis.set_label_text('mg')
-    axess[1].plot(tss, speeds_kph, color='red')
-    axess[1].yaxis.set_label_text('km/h')
+    axess = fig.subplots(3, 1, sharex=True, height_ratios=[2, 1, 2])
+    accel_axes, speed_axes, accel_analysis_axes = axess
+    accel_axes.plot(tss, accels, color='black')
+    accel_axes.yaxis.set_label_text('mg')
+    speed_axes.plot(tss, speeds_kph, color='black')
+    speed_axes.yaxis.set_label_text('km/h')
+    accel_analysis_axes.plot(tss, avg_accels, color='blue')
+    accel_analysis_axes.yaxis.set_label_text('mg')
     plt.show()
+
+
+def rolling_average_absolute_accels(positions, window_duration):
+    absolute_accels = []
+    window = collections.deque()
+    for position in positions:
+        window.append(position)
+        min_ts = position.ts - window_duration
+        while window[0].ts < min_ts:
+            window.popleft()
+        absolute_accels.append(sum(abs(p.accel) for p in window) / len(window))
+    return absolute_accels
 
 
 def plot_track_map(track):
