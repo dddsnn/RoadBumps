@@ -162,6 +162,55 @@ class Track:
         return shapely.geometry.LineString(
             (p.lon, p.lat) for p in self.positions)
 
+    @property
+    def tss(self):
+        return [p.ts for p in self.positions]
+
+    @property
+    def accels(self):
+        return [p.accel for p in self.positions]
+
+    @property
+    def speeds_kph(self):
+        return [self._mps_to_kph(p.speed) for p in self.positions]
+
+    @staticmethod
+    def _mps_to_kph(mps):
+        return mps * 3.6
+
+    def rolling_average_absolute_accels(
+            self, window_duration_seconds, attenuate_by_speed=False):
+        window_duration = datetime.timedelta(seconds=window_duration_seconds)
+        absolute_accels = []
+        window = collections.deque()
+        for position in self.positions:
+            window.append(position)
+            min_ts = position.ts - window_duration
+            while window[0].ts < min_ts:
+                window.popleft()
+            absolute_accels.append(
+                sum(abs(p.accel) for p in window) / len(window))
+        if attenuate_by_speed:
+            return self._attenuated_by_speed(absolute_accels)
+        return absolute_accels
+
+    def _attenuated_by_speed(self, accels):
+        attenuated_accels = []
+        for accel, speed in zip(accels, self.speeds_kph):
+            fraction_on_the_way_to_40 = min(speed, 40) / 40
+            factor = 1 - (fraction_on_the_way_to_40**2 * 0.75)
+            attenuated_accels.append(factor * accel)
+        return attenuated_accels
+
+    def low_pass_absolute_accels(self, min_accel):
+        filtered_accels = []
+        for accel in self.accels:
+            if accel >= min_accel:
+                filtered_accels.append(accel)
+            else:
+                filtered_accels.append(0)
+        return filtered_accels
+
 
 def main():
     if len(sys.argv) != 2:
@@ -189,55 +238,22 @@ def plot_track(track):
 
 def add_dynamics_subplots(track, figure, gridspecs):
     assert len(gridspecs) == 3
-    tss = [p.ts for p in track.positions]
-    accels = [p.accel for p in track.positions]
-    speeds_kph = [mps_to_kph(p.speed) for p in track.positions]
-    avg_accels = rolling_average_absolute_accels(
-        track.positions, datetime.timedelta(seconds=10))
     accel_axes = figure.add_subplot(gridspecs[0])
     speed_axes = figure.add_subplot(gridspecs[1], sharex=accel_axes)
     accel_analysis_axes = figure.add_subplot(gridspecs[2], sharex=accel_axes)
-    accel_axes.plot(tss, accels, color='black')
+    accel_axes.plot(track.tss, track.accels, color='black')
     accel_axes.yaxis.set_label_text('mg')
-    speed_axes.plot(tss, speeds_kph, color='black')
+    speed_axes.plot(track.tss, track.speeds_kph, color='black')
     speed_axes.yaxis.set_label_text('km/h')
-    accel_analysis_axes.plot(tss, avg_accels, color='black')
     accel_analysis_axes.plot(
-        tss, attenuated_by_speed(avg_accels, speeds_kph), color='blue')
+        track.tss, track.rolling_average_absolute_accels(10), color='black')
     accel_analysis_axes.plot(
-        tss, low_pass_absolute_accels(accels, 4000), color='red')
+        track.tss,
+        track.rolling_average_absolute_accels(10, attenuate_by_speed=True),
+        color='blue')
+    accel_analysis_axes.plot(
+        track.tss, track.low_pass_absolute_accels(4000), color='red')
     accel_analysis_axes.yaxis.set_label_text('mg')
-
-
-def rolling_average_absolute_accels(positions, window_duration):
-    absolute_accels = []
-    window = collections.deque()
-    for position in positions:
-        window.append(position)
-        min_ts = position.ts - window_duration
-        while window[0].ts < min_ts:
-            window.popleft()
-        absolute_accels.append(sum(abs(p.accel) for p in window) / len(window))
-    return absolute_accels
-
-
-def attenuated_by_speed(accels, speeds_kph):
-    attenuated_accels = []
-    for accel, speed in zip(accels, speeds_kph):
-        fraction_on_the_way_to_40 = min(speed, 40) / 40
-        factor = 1 - (fraction_on_the_way_to_40**2 * 0.75)
-        attenuated_accels.append(factor * accel)
-    return attenuated_accels
-
-
-def low_pass_absolute_accels(accels, min_accel):
-    filtered_accels = []
-    for accel in accels:
-        if accel >= min_accel:
-            filtered_accels.append(accel)
-        else:
-            filtered_accels.append(0)
-    return filtered_accels
 
 
 def add_map_subplot(track, figure, gridspec):
@@ -249,7 +265,7 @@ def add_map_subplot(track, figure, gridspec):
     axes.set_extent(extent, crs=projection.as_geodetic())
     axes.add_image(cartopy.io.img_tiles.OSM(), zoom_level_for_extent(*extent))
     axes.add_geometries([line], projection.as_geodetic(), linewidth=3,
-                        edgecolor='black', facecolor=(0, 0, 0, 0))
+                        edgecolor='black', facecolor='none')
 
 
 def geo_axes_class_with_projection(projection):
@@ -276,10 +292,6 @@ def buffered_bounds(bounds, buffer_fraction):
     buffer_y = height * buffer_fraction
     return (
         min_x - buffer_x, max_x + buffer_x, min_y - buffer_y, max_y + buffer_y)
-
-
-def mps_to_kph(mps):
-    return mps * 3.6
 
 
 if __name__ == '__main__':
