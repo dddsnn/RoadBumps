@@ -33,6 +33,15 @@ class Position:
     lat: float
     speed: float
     accel: float
+    analysis_data: dict = dc.field(default_factory=dict)
+
+    @property
+    def speed_kph(self):
+        return self._mps_to_kph(self.speed)
+
+    @staticmethod
+    def _mps_to_kph(mps):
+        return mps * 3.6
 
 
 class Track:
@@ -172,35 +181,41 @@ class Track:
 
     @property
     def speeds_kph(self):
-        return [self._mps_to_kph(p.speed) for p in self.positions]
-
-    @staticmethod
-    def _mps_to_kph(mps):
-        return mps * 3.6
+        return [p.speed_kph for p in self.positions]
 
     def rolling_average_absolute_accels(
             self, window_duration_seconds, attenuate_by_speed=False):
+        self._ensure_rolling_average_absolute_accels(
+            window_duration_seconds, attenuate_by_speed)
+        key = (
+            'rolling_average_absolute_accels', window_duration_seconds,
+            attenuate_by_speed)
+        return [p.analysis_data[key] for p in self.positions]
+
+    def _ensure_rolling_average_absolute_accels(
+            self, window_duration_seconds, attenuate_by_speed):
+        key = (
+            'rolling_average_absolute_accels', window_duration_seconds,
+            attenuate_by_speed)
+        if not self.positions or key in self.positions[0].analysis_data:
+            return
         window_duration = datetime.timedelta(seconds=window_duration_seconds)
-        absolute_accels = []
         window = collections.deque()
         for position in self.positions:
             window.append(position)
             min_ts = position.ts - window_duration
             while window[0].ts < min_ts:
                 window.popleft()
-            absolute_accels.append(
-                sum(abs(p.accel) for p in window) / len(window))
-        if attenuate_by_speed:
-            return self._attenuated_by_speed(absolute_accels)
-        return absolute_accels
+            absolute_accel = sum(abs(p.accel) for p in window) / len(window)
+            if attenuate_by_speed:
+                absolute_accel = self._attenuate_by_speed(
+                    absolute_accel, position.speed_kph)
+            position.analysis_data[key] = absolute_accel
 
-    def _attenuated_by_speed(self, accels):
-        attenuated_accels = []
-        for accel, speed in zip(accels, self.speeds_kph):
-            fraction_on_the_way_to_40 = min(speed, 40) / 40
-            factor = 1 - (fraction_on_the_way_to_40**2 * 0.75)
-            attenuated_accels.append(factor * accel)
-        return attenuated_accels
+    def _attenuate_by_speed(self, accel, speed_kph):
+        fraction_on_the_way_to_40 = min(speed_kph, 40) / 40
+        factor = 1 - (fraction_on_the_way_to_40**2 * 0.75)
+        return factor * accel
 
     def low_pass_absolute_accels(self, min_accel):
         filtered_accels = []
