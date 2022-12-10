@@ -1,6 +1,7 @@
 import collections
 import dataclasses as dc
 import datetime
+import functools as ft
 import itertools as it
 import logging
 import math
@@ -48,7 +49,7 @@ class Track:
     EXPECTED_ACCEL_VALUES_PER_MESSAGE = 25
 
     def __init__(self, positions):
-        self.positions = positions
+        self._positions = positions
 
     @classmethod
     def from_path(cls, file_path):
@@ -167,9 +168,18 @@ class Track:
                     f'timestamps: {p1.ts} - {p2.ts}.')
 
     @property
-    def linestring(self):
-        return shapely.geometry.LineString(
-            (p.lon, p.lat) for p in self.positions)
+    def positions(self):
+        return self._positions
+
+    @property
+    @ft.cache
+    def bounds(self):
+        min_lon = min_lat = float('inf')
+        max_lon = max_lat = float('-inf')
+        for p in self.positions:
+            min_lon, max_lon = min(min_lon, p.lon), max(max_lon, p.lon)
+            min_lat, max_lat = min(min_lat, p.lat), max(max_lat, p.lat)
+        return min_lon, min_lat, max_lon, max_lat
 
     @property
     def tss(self):
@@ -272,13 +282,13 @@ def add_dynamics_subplots(track, figure, gridspecs):
 
 
 def add_map_subplot(track, figure, gridspec):
-    line = track.linestring
     projection = cartopy.crs.Mercator()
     axes = figure.add_subplot(
         gridspec, axes_class=geo_axes_class_with_projection(projection))
-    extent = buffered_bounds(line.bounds, 0.1)
+    extent = buffered_bounds(track.bounds, 0.1)
     axes.set_extent(extent, crs=projection.as_geodetic())
     axes.add_image(cartopy.io.img_tiles.OSM(), zoom_level_for_extent(*extent))
+    line = shapely.geometry.LineString((p.lon, p.lat) for p in track.positions)
     axes.add_geometries([line], projection.as_geodetic(), linewidth=3,
                         edgecolor='black', facecolor='none')
 
