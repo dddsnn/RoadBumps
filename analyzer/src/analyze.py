@@ -195,14 +195,14 @@ class Track:
 
     def rolling_average_absolute_accels(
             self, window_duration_seconds, attenuate_by_speed=False):
-        self._ensure_rolling_average_absolute_accels(
+        self.ensure_rolling_average_absolute_accels(
             window_duration_seconds, attenuate_by_speed)
         key = (
             'rolling_average_absolute_accels', window_duration_seconds,
             attenuate_by_speed)
         return [p.analysis_data[key] for p in self.positions]
 
-    def _ensure_rolling_average_absolute_accels(
+    def ensure_rolling_average_absolute_accels(
             self, window_duration_seconds, attenuate_by_speed):
         key = (
             'rolling_average_absolute_accels', window_duration_seconds,
@@ -235,6 +235,25 @@ class Track:
             else:
                 filtered_accels.append(0)
         return filtered_accels
+
+    def time_slices(self, duration_seconds):
+        slice_duration = datetime.timedelta(seconds=duration_seconds)
+        positions = iter(self.positions)
+        current_slice = []
+        while True:
+            try:
+                current_duration = current_slice[-1].ts - current_slice[0].ts
+                if current_duration >= slice_duration:
+                    yield current_slice
+                    current_slice = []
+            except IndexError:
+                pass
+            try:
+                current_slice.append(next(positions))
+            except StopIteration:
+                if current_slice:
+                    yield current_slice
+                return
 
 
 def main():
@@ -288,9 +307,16 @@ def add_map_subplot(track, figure, gridspec):
     extent = buffered_bounds(track.bounds, 0.1)
     axes.set_extent(extent, crs=projection.as_geodetic())
     axes.add_image(cartopy.io.img_tiles.OSM(), zoom_level_for_extent(*extent))
-    line = shapely.geometry.LineString((p.lon, p.lat) for p in track.positions)
-    axes.add_geometries([line], projection.as_geodetic(), linewidth=3,
-                        edgecolor='black', facecolor='none')
+    track.ensure_rolling_average_absolute_accels(10, True)
+    for slice in track.time_slices(10):
+        line = shapely.geometry.LineString((p.lon, p.lat) for p in slice)
+        att_abs_accels = [
+            p.analysis_data[('rolling_average_absolute_accels', 10, True)]
+            for p in slice]
+        avg_att_abs_accel = sum(att_abs_accels) / len(att_abs_accels)
+        axes.add_geometries([line], projection.as_geodetic(), linewidth=3,
+                            edgecolor=color_for_accel(avg_att_abs_accel),
+                            facecolor='none')
 
 
 def geo_axes_class_with_projection(projection):
@@ -317,6 +343,12 @@ def buffered_bounds(bounds, buffer_fraction):
     buffer_y = height * buffer_fraction
     return (
         min_x - buffer_x, max_x + buffer_x, min_y - buffer_y, max_y + buffer_y)
+
+
+def color_for_accel(abs_accel_millig):
+    fraction_to_max = min(1, abs_accel_millig / 500)
+    byte_val_to_max = int(fraction_to_max * 255)
+    return f'#{byte_val_to_max:02x}{255-byte_val_to_max:02x}00'
 
 
 if __name__ == '__main__':
