@@ -297,15 +297,23 @@ def add_dynamics_subplots(track, figure, gridspecs):
         track.tss,
         track.rolling_average_absolute_accels(10, attenuate_by_speed=True),
         color='blue')
+    # TODO give low pass its own y axis so it doesn't mess up the scale of the average data++++++++++
     accel_analysis_axes.plot(
         track.tss, track.low_pass_absolute_accels(4000), color='red')
     accel_analysis_axes.yaxis.set_label_text('mg')
 
 
 class MapSubplot:
-    def __init__(self, figure, gridspec):
+    TRACK_TIME_SCLICE_SECONDS = 10
+
+    def __init__(
+            self, figure, gridspec, rolling_average_window_duration_seconds=10,
+            red_limit_millig=400):
         self.figure = figure
         self.gridspec = gridspec
+        self.rolling_average_window_duration_seconds = (
+            rolling_average_window_duration_seconds)
+        self.red_limit_millig = red_limit_millig
         self.projection = cartopy.crs.Mercator()
         self.color_gradient = list(
             colour.Color('green').range_to(colour.Color('red'), 101))
@@ -318,11 +326,14 @@ class MapSubplot:
         axes.add_image(
             cartopy.io.img_tiles.OSM(desired_tile_form='L'),
             self._zoom_level_for_extent(*extent), cmap='gray')
-        track.ensure_rolling_average_absolute_accels(10, True)
-        for slice in track.time_slices(10):
+        track.ensure_rolling_average_absolute_accels(
+            self.rolling_average_window_duration_seconds, True)
+        for slice in track.time_slices(self.TRACK_TIME_SCLICE_SECONDS):
             line = shapely.geometry.LineString((p.lon, p.lat) for p in slice)
             att_abs_accels = [
-                p.analysis_data[('rolling_average_absolute_accels', 10, True)]
+                p.analysis_data[(
+                    'rolling_average_absolute_accels',
+                    self.rolling_average_window_duration_seconds, True)]
                 for p in slice]
             avg_att_abs_accel = sum(att_abs_accels) / len(att_abs_accels)
             axes.add_geometries(
@@ -359,8 +370,7 @@ class MapSubplot:
             max_y + buffer_y)
 
     def _color_for_accel(self, abs_accel_millig):
-        # REFACTOR config red limit+++++++++++++++++++++++
-        fraction_to_max = min(1, abs_accel_millig / 500)
+        fraction_to_max = min(1, abs_accel_millig / self.red_limit_millig)
         percent_to_max = int(fraction_to_max * 100)
         return self.color_gradient[percent_to_max].hex
 
