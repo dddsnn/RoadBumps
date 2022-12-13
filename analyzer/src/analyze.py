@@ -276,7 +276,8 @@ def plot_track(track):
         3, 2, figure=figure, height_ratios=[2, 1, 2])
     add_dynamics_subplots(
         track, figure, [gridspec[0, 0:1], gridspec[1, 0:1], gridspec[2, 0:1]])
-    add_map_subplot(track, figure, gridspec[0:, 1])
+    map_subplot = MapSubplot(figure, gridspec[0:, 1])
+    map_subplot.plot(track)
     plt.show()
 
 
@@ -300,55 +301,64 @@ def add_dynamics_subplots(track, figure, gridspecs):
     accel_analysis_axes.yaxis.set_label_text('mg')
 
 
-def add_map_subplot(track, figure, gridspec):
-    projection = cartopy.crs.Mercator()
-    axes = figure.add_subplot(
-        gridspec, axes_class=geo_axes_class_with_projection(projection))
-    extent = buffered_bounds(track.bounds, 0.1)
-    axes.set_extent(extent, crs=projection.as_geodetic())
-    axes.add_image(cartopy.io.img_tiles.OSM(), zoom_level_for_extent(*extent))
-    track.ensure_rolling_average_absolute_accels(10, True)
-    for slice in track.time_slices(10):
-        line = shapely.geometry.LineString((p.lon, p.lat) for p in slice)
-        att_abs_accels = [
-            p.analysis_data[('rolling_average_absolute_accels', 10, True)]
-            for p in slice]
-        avg_att_abs_accel = sum(att_abs_accels) / len(att_abs_accels)
-        axes.add_geometries([line], projection.as_geodetic(), linewidth=3,
-                            edgecolor=color_for_accel(avg_att_abs_accel),
-                            facecolor='none')
+class MapSubplot:
+    def __init__(self, figure, gridspec):
+        self.figure = figure
+        self.gridspec = gridspec
+        self.projection = cartopy.crs.Mercator()
 
+    def plot(self, track):
+        axes = self.figure.add_subplot(
+            self.gridspec, axes_class=self._geo_axes_class_with_projection())
+        extent = self._buffered_bounds(track.bounds, 0.1)
+        axes.set_extent(extent, crs=self.projection.as_geodetic())
+        axes.add_image(
+            cartopy.io.img_tiles.OSM(), self._zoom_level_for_extent(*extent))
+        track.ensure_rolling_average_absolute_accels(10, True)
+        for slice in track.time_slices(10):
+            line = shapely.geometry.LineString((p.lon, p.lat) for p in slice)
+            att_abs_accels = [
+                p.analysis_data[('rolling_average_absolute_accels', 10, True)]
+                for p in slice]
+            avg_att_abs_accel = sum(att_abs_accels) / len(att_abs_accels)
+            axes.add_geometries(
+                [line], self.projection.as_geodetic(), linewidth=3,
+                edgecolor=self._color_for_accel(avg_att_abs_accel),
+                facecolor='none')
 
-def geo_axes_class_with_projection(projection):
-    class GeoAxes(cartopy.mpl.geoaxes.GeoAxes):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs, projection=projection)
+    def _geo_axes_class_with_projection(self):
+        projection = self.projection
 
-    return GeoAxes
+        class GeoAxes(cartopy.mpl.geoaxes.GeoAxes):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs, projection=projection)
 
+        return GeoAxes
 
-def zoom_level_for_extent(min_lon, max_lon, min_lat, max_lat):
-    lon_fraction = (max_lon - min_lon) / 90
-    lat_fraction = (max_lat - min_lat) / 180
-    doublings = math.log2(1 / max(lon_fraction, lat_fraction))
-    # Zoom level 2 as base for the entire world.
-    return 2 + math.ceil(doublings)
+    @staticmethod
+    def _zoom_level_for_extent(min_lon, max_lon, min_lat, max_lat):
+        lon_fraction = (max_lon - min_lon) / 90
+        lat_fraction = (max_lat - min_lat) / 180
+        doublings = math.log2(1 / max(lon_fraction, lat_fraction))
+        # Zoom level 2 as base for the entire world.
+        return 2 + math.ceil(doublings)
 
+    @staticmethod
+    def _buffered_bounds(bounds, buffer_fraction):
+        min_x, min_y, max_x, max_y = bounds
+        width = max_x - min_x
+        height = max_y - min_y
+        buffer_x = width * buffer_fraction
+        buffer_y = height * buffer_fraction
+        return (
+            min_x - buffer_x, max_x + buffer_x, min_y - buffer_y,
+            max_y + buffer_y)
 
-def buffered_bounds(bounds, buffer_fraction):
-    min_x, min_y, max_x, max_y = bounds
-    width = max_x - min_x
-    height = max_y - min_y
-    buffer_x = width * buffer_fraction
-    buffer_y = height * buffer_fraction
-    return (
-        min_x - buffer_x, max_x + buffer_x, min_y - buffer_y, max_y + buffer_y)
-
-
-def color_for_accel(abs_accel_millig):
-    fraction_to_max = min(1, abs_accel_millig / 500)
-    byte_val_to_max = int(fraction_to_max * 255)
-    return f'#{byte_val_to_max:02x}{255-byte_val_to_max:02x}00'
+    @staticmethod
+    def _color_for_accel(abs_accel_millig):
+        fraction_to_max = min(1, abs_accel_millig / 500)
+        byte_val_to_max = int(fraction_to_max * 255)
+        return f'#{byte_val_to_max:02x}{255-byte_val_to_max:02x}00'
 
 
 if __name__ == '__main__':
