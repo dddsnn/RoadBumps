@@ -11,6 +11,7 @@ import sys
 import cartopy.crs
 import cartopy.io.img_tiles
 import cartopy.mpl.geoaxes
+import colour
 import fitparse
 import matplotlib.pyplot as plt
 import shapely.geometry
@@ -306,6 +307,8 @@ class MapSubplot:
         self.figure = figure
         self.gridspec = gridspec
         self.projection = cartopy.crs.Mercator()
+        self.color_gradient = list(
+            colour.Color('green').range_to(colour.Color('red'), 101))
 
     def plot(self, track):
         axes = self.figure.add_subplot(
@@ -354,11 +357,11 @@ class MapSubplot:
             min_x - buffer_x, max_x + buffer_x, min_y - buffer_y,
             max_y + buffer_y)
 
-    @staticmethod
-    def _color_for_accel(abs_accel_millig):
+    def _color_for_accel(self, abs_accel_millig):
+        # REFACTOR config red limit+++++++++++++++++++++++
         fraction_to_max = min(1, abs_accel_millig / 500)
-        byte_val_to_max = int(fraction_to_max * 255)
-        return f'#{byte_val_to_max:02x}{255-byte_val_to_max:02x}00'
+        percent_to_max = int(fraction_to_max * 100)
+        return self.color_gradient[percent_to_max].hex
 
 
 if __name__ == '__main__':
