@@ -266,7 +266,6 @@ def main():
 def analyze_files(file_path):
     if not file_path.endswith('.fit'):
         raise ValueError(f'{file_path} doesn\'t look like a .fit file.')
-    file_base_path = file_path[:-4]
     track = Track.from_path(file_path)
     plot_track(track)
 
@@ -298,7 +297,6 @@ def add_dynamics_subplots(track, figure, gridspecs, min_spike_millig=3000):
         track.tss,
         track.rolling_average_absolute_accels(10, attenuate_by_speed=True),
         color='blue')
-    # TODO give low pass its own y axis so it doesn't mess up the scale of the average data++++++++++
     accel_analysis_axes.plot(
         track.tss, track.low_pass_absolute_accels(min_spike_millig),
         color='red')
