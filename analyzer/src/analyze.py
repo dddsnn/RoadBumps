@@ -316,7 +316,8 @@ class MapSubplot:
         extent = self._buffered_bounds(track.bounds, 0.1)
         axes.set_extent(extent, crs=self.projection.as_geodetic())
         axes.add_image(
-            cartopy.io.img_tiles.OSM(), self._zoom_level_for_extent(*extent))
+            cartopy.io.img_tiles.OSM(desired_tile_form='L'),
+            self._zoom_level_for_extent(*extent), cmap='gray')
         track.ensure_rolling_average_absolute_accels(10, True)
         for slice in track.time_slices(10):
             line = shapely.geometry.LineString((p.lon, p.lat) for p in slice)
