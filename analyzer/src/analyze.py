@@ -276,13 +276,14 @@ def plot_track(track):
     gridspec = figure.add_gridspec(
         3, 2, figure=figure, height_ratios=[2, 1, 2])
     add_dynamics_subplots(
-        track, figure, [gridspec[0, 0:1], gridspec[1, 0:1], gridspec[2, 0:1]])
-    map_subplot = MapSubplot(figure, gridspec[0:, 1])
+        track, figure, [gridspec[0, 0:1], gridspec[1, 0:1], gridspec[2, 0:1]],
+        min_spike_millig=3000)
+    map_subplot = MapSubplot(figure, gridspec[0:, 1], min_spike_millig=3000)
     map_subplot.plot(track)
     plt.show()
 
 
-def add_dynamics_subplots(track, figure, gridspecs):
+def add_dynamics_subplots(track, figure, gridspecs, min_spike_millig=3000):
     assert len(gridspecs) == 3
     accel_axes = figure.add_subplot(gridspecs[0])
     speed_axes = figure.add_subplot(gridspecs[1], sharex=accel_axes)
@@ -299,36 +300,44 @@ def add_dynamics_subplots(track, figure, gridspecs):
         color='blue')
     # TODO give low pass its own y axis so it doesn't mess up the scale of the average data++++++++++
     accel_analysis_axes.plot(
-        track.tss, track.low_pass_absolute_accels(4000), color='red')
+        track.tss, track.low_pass_absolute_accels(min_spike_millig),
+        color='red')
     accel_analysis_axes.yaxis.set_label_text('mg')
 
 
 class MapSubplot:
-    TRACK_TIME_SCLICE_SECONDS = 10
+    TRACK_TIME_SLICE_SECONDS = 10
+    SPIKE_TIME_SLICE_SECONDS = 1
 
     def __init__(
             self, figure, gridspec, rolling_average_window_duration_seconds=10,
-            red_limit_millig=400):
+            red_limit_millig=400, min_spike_millig=3000):
         self.figure = figure
         self.gridspec = gridspec
         self.rolling_average_window_duration_seconds = (
             rolling_average_window_duration_seconds)
         self.red_limit_millig = red_limit_millig
+        self.min_spike_millig = min_spike_millig
+        self._axes = None
         self.projection = cartopy.crs.Mercator()
         self.color_gradient = list(
             colour.Color('green').range_to(colour.Color('red'), 101))
 
     def plot(self, track):
-        axes = self.figure.add_subplot(
+        self._axes = self.figure.add_subplot(
             self.gridspec, axes_class=self._geo_axes_class_with_projection())
         extent = self._buffered_bounds(track.bounds, 0.1)
-        axes.set_extent(extent, crs=self.projection.as_geodetic())
-        axes.add_image(
+        self._axes.set_extent(extent, crs=self.projection.as_geodetic())
+        self._axes.add_image(
             cartopy.io.img_tiles.OSM(desired_tile_form='L'),
             self._zoom_level_for_extent(*extent), cmap='gray')
+        self._plot_track(track)
+        self._plot_spikes(track)
+
+    def _plot_track(self, track):
         track.ensure_rolling_average_absolute_accels(
             self.rolling_average_window_duration_seconds, True)
-        for slice in track.time_slices(self.TRACK_TIME_SCLICE_SECONDS):
+        for slice in track.time_slices(self.TRACK_TIME_SLICE_SECONDS):
             line = shapely.geometry.LineString((p.lon, p.lat) for p in slice)
             att_abs_accels = [
                 p.analysis_data[(
@@ -336,10 +345,22 @@ class MapSubplot:
                     self.rolling_average_window_duration_seconds, True)]
                 for p in slice]
             avg_att_abs_accel = sum(att_abs_accels) / len(att_abs_accels)
-            axes.add_geometries(
+            self._axes.add_geometries(
                 [line], self.projection.as_geodetic(), linewidth=3,
                 edgecolor=self._color_for_accel(avg_att_abs_accel),
                 facecolor='none')
+
+    def _plot_spikes(self, track):
+        xs, ys = [], []
+        for slice in track.time_slices(self.SPIKE_TIME_SLICE_SECONDS):
+            if any(abs(p.accel) >= self.min_spike_millig for p in slice):
+                mid = slice[len(slice) // 2]
+                xs.append(mid.lon)
+                ys.append(mid.lat)
+        if xs:
+            self._axes.scatter(
+                x=xs, y=ys, s=100, facecolor='purple',
+                transform=self.projection.as_geodetic())
 
     def _geo_axes_class_with_projection(self):
         projection = self.projection
