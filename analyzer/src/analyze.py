@@ -230,15 +230,6 @@ class Track:
         factor = 1 - (fraction_on_the_way_to_40**2 * 0.75)
         return factor * accel
 
-    def low_pass_absolute_accels(self, min_accel):
-        filtered_accels = []
-        for accel in self.accels:
-            if accel >= min_accel:
-                filtered_accels.append(accel)
-            else:
-                filtered_accels.append(0)
-        return filtered_accels
-
     def time_slices(self, duration_seconds):
         slice_duration = datetime.timedelta(seconds=duration_seconds)
         positions = iter(self.positions)
@@ -299,9 +290,6 @@ def add_dynamics_subplots(track, figure, gridspecs, min_spike_millig=3000):
         track.tss,
         track.rolling_average_absolute_accels(10, attenuate_by_speed=True),
         color='blue')
-    accel_analysis_axes.plot(
-        track.tss, track.low_pass_absolute_accels(min_spike_millig),
-        color='red')
     accel_analysis_axes.yaxis.set_label_text('mg')
 
 
