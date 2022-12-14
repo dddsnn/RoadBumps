@@ -5,3 +5,4 @@ services:
     build: .
     volumes:
       - ./fit:/fit
+      - ./cartopy_cache:/cartopy_cache

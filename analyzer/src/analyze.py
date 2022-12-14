@@ -5,9 +5,11 @@ import functools as ft
 import itertools as it
 import logging
 import math
+import pathlib
 import re
 import sys
 
+import cartopy
 import cartopy.crs
 import cartopy.io.img_tiles
 import cartopy.mpl.geoaxes
@@ -320,6 +322,8 @@ class MapSubplot:
         self.projection = cartopy.crs.Mercator()
         self.color_gradient = list(
             colour.Color('green').range_to(colour.Color('red'), 101))
+        cartopy.config['cache_dir'] = (
+            pathlib.Path(__file__).parent.parent / 'cartopy_cache')
 
     def plot(self, track):
         self._axes = self.figure.add_subplot(
@@ -327,7 +331,7 @@ class MapSubplot:
         extent = self._buffered_bounds(track.bounds, 0.1)
         self._axes.set_extent(extent, crs=self.projection.as_geodetic())
         self._axes.add_image(
-            cartopy.io.img_tiles.OSM(desired_tile_form='L'),
+            cartopy.io.img_tiles.OSM(desired_tile_form='L', cache=True),
             self._zoom_level_for_extent(*extent), cmap='gray')
         self._plot_track(track)
         self._plot_spikes(track)
