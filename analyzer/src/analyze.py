@@ -25,6 +25,10 @@ def setup_logging():
     logging.basicConfig(level=logging.INFO)
 
 
+def capped_fraction(value, reference):
+    return min(1, value / reference)
+
+
 class ParseError(Exception):
     pass
 
@@ -226,8 +230,7 @@ class Track:
             position.analysis_data[key] = absolute_accel
 
     def _attenuate_by_speed(self, accel, speed_kph):
-        fraction_on_the_way_to_40 = min(speed_kph, 40) / 40
-        factor = 1 - (fraction_on_the_way_to_40**2 * 0.75)
+        factor = 1 - (capped_fraction(speed_kph, 40)**2 * 0.75)
         return factor * accel
 
     def time_slices(self, duration_seconds):
@@ -299,13 +302,15 @@ class MapSubplot:
 
     def __init__(
             self, figure, gridspec, rolling_average_window_duration_seconds=10,
-            red_limit_millig=400, min_spike_millig=3000):
+            track_red_limit_millig=300, min_spike_millig=2000,
+            spike_red_limit_millig=4000):
         self.figure = figure
         self.gridspec = gridspec
         self.rolling_average_window_duration_seconds = (
             rolling_average_window_duration_seconds)
-        self.red_limit_millig = red_limit_millig
+        self.track_red_limit_millig = track_red_limit_millig
         self.min_spike_millig = min_spike_millig
+        self.spike_red_limit_millig = spike_red_limit_millig
         self._axes = None
         self.projection = cartopy.crs.Mercator()
         self.color_gradient = list(
@@ -341,15 +346,18 @@ class MapSubplot:
                 facecolor='none')
 
     def _plot_spikes(self, track):
-        xs, ys = [], []
+        spikes = []
         for slice in track.time_slices(self.SPIKE_TIME_SLICE_SECONDS):
-            if any(abs(p.accel) >= self.min_spike_millig for p in slice):
+            max_accel = max(abs(p.accel) for p in slice)
+            if max_accel >= self.min_spike_millig:
                 mid = slice[len(slice) // 2]
-                xs.append(mid.lon)
-                ys.append(mid.lat)
-        if xs:
-            self._axes.scatter(
-                x=xs, y=ys, s=100, facecolor='purple',
+                spikes.append((mid.lon, mid.lat, max_accel))
+        for x, y, accel in spikes:
+            accel_over_min = accel - self.min_spike_millig
+            markersize = 5 + 10 * capped_fraction(
+                accel_over_min, self.spike_red_limit_millig)
+            self._axes.plot(
+                x, y, 'o', markersize=markersize, color='purple', alpha=0.5,
                 transform=self.projection.as_geodetic())
 
     def _geo_axes_class_with_projection(self):
@@ -381,8 +389,9 @@ class MapSubplot:
             max_y + buffer_y)
 
     def _color_for_accel(self, abs_accel_millig):
-        fraction_to_max = min(1, abs_accel_millig / self.red_limit_millig)
-        percent_to_max = int(fraction_to_max * 100)
+        percent_to_max = int(
+            capped_fraction(abs_accel_millig, self.track_red_limit_millig)
+            * 100)
         return self.color_gradient[percent_to_max].hex
 
 
