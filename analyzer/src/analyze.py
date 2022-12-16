@@ -1,3 +1,4 @@
+import argparse
 import collections
 import dataclasses as dc
 import datetime
@@ -7,7 +8,6 @@ import logging
 import math
 import pathlib
 import re
-import sys
 
 import cartopy
 import cartopy.crs
@@ -253,49 +253,6 @@ class Track:
                 return
 
 
-def main():
-    if len(sys.argv) != 2:
-        raise ValueError('Specify one file to process.')
-    analyze_files(sys.argv[1])
-
-
-def analyze_files(file_path):
-    if not file_path.endswith('.fit'):
-        raise ValueError(f'{file_path} doesn\'t look like a .fit file.')
-    track = Track.from_path(file_path)
-    plot_track(track)
-
-
-def plot_track(track):
-    figure = plt.figure()
-    gridspec = figure.add_gridspec(
-        3, 2, figure=figure, height_ratios=[2, 1, 2])
-    add_dynamics_subplots(
-        track, figure, [gridspec[0, 0:1], gridspec[1, 0:1], gridspec[2, 0:1]],
-        min_spike_millig=3000)
-    map_subplot = MapSubplot(figure, gridspec[0:, 1], min_spike_millig=3000)
-    map_subplot.plot(track)
-    plt.show()
-
-
-def add_dynamics_subplots(track, figure, gridspecs, min_spike_millig=3000):
-    assert len(gridspecs) == 3
-    accel_axes = figure.add_subplot(gridspecs[0])
-    speed_axes = figure.add_subplot(gridspecs[1], sharex=accel_axes)
-    accel_analysis_axes = figure.add_subplot(gridspecs[2], sharex=accel_axes)
-    accel_axes.plot(track.tss, track.accels, color='black')
-    accel_axes.yaxis.set_label_text('mg')
-    speed_axes.plot(track.tss, track.speeds_kph, color='black')
-    speed_axes.yaxis.set_label_text('km/h')
-    accel_analysis_axes.plot(
-        track.tss, track.rolling_average_absolute_accels(10), color='black')
-    accel_analysis_axes.plot(
-        track.tss,
-        track.rolling_average_absolute_accels(10, attenuate_by_speed=True),
-        color='blue')
-    accel_analysis_axes.yaxis.set_label_text('mg')
-
-
 class MapSubplot:
     TRACK_TIME_SLICE_SECONDS = 10
     SPIKE_TIME_SLICE_SECONDS = 1
@@ -393,6 +350,56 @@ class MapSubplot:
             capped_fraction(abs_accel_millig, self.track_red_limit_millig)
             * 100)
         return self.color_gradient[percent_to_max].hex
+
+
+def analyze_files(paths):
+    if {p.suffix for p in paths} != {'.fit'}:
+        raise ValueError(f'One of {paths} doesn\'t look like a .fit file.')
+    for path in paths:
+        track = Track.from_path(path)
+        figure = plt.figure(layout='constrained')
+        figure.suptitle(path)
+        plot_track(track, figure)
+    plt.show()
+
+
+def plot_track(track, figure):
+    gridspec = figure.add_gridspec(
+        3, 2, figure=figure, height_ratios=[2, 1, 2])
+    add_dynamics_subplots(
+        track, figure, [gridspec[0, 0:1], gridspec[1, 0:1], gridspec[2, 0:1]])
+    map_subplot = MapSubplot(figure, gridspec[0:, 1], min_spike_millig=3000)
+    map_subplot.plot(track)
+
+
+def add_dynamics_subplots(track, figure, gridspecs):
+    assert len(gridspecs) == 3
+    accel_axes = figure.add_subplot(gridspecs[0])
+    speed_axes = figure.add_subplot(gridspecs[1], sharex=accel_axes)
+    accel_analysis_axes = figure.add_subplot(gridspecs[2], sharex=accel_axes)
+    accel_axes.plot(
+        track.tss, track.accels, color='black', label='Raw acceleration')
+    accel_axes.yaxis.set_label_text('mg')
+    accel_axes.legend()
+    speed_axes.plot(track.tss, track.speeds_kph, color='black', label='Speed')
+    speed_axes.yaxis.set_label_text('km/h')
+    speed_axes.legend()
+    accel_analysis_axes.plot(
+        track.tss, track.rolling_average_absolute_accels(10), color='black',
+        label='Absolute acceleration')
+    accel_analysis_axes.plot(
+        track.tss,
+        track.rolling_average_absolute_accels(10, attenuate_by_speed=True),
+        color='blue', label='Attenuated absolute acceleration')
+    accel_analysis_axes.yaxis.set_label_text('mg')
+    accel_analysis_axes.legend()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('paths', nargs='+', type=pathlib.Path)
+    args = parser.parse_args()
+    analyze_files(args.paths)
 
 
 if __name__ == '__main__':
