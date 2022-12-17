@@ -352,15 +352,20 @@ class MapSubplot:
         return self.color_gradient[percent_to_max].hex
 
 
-def analyze_files(paths):
-    if {p.suffix for p in paths} != {'.fit'}:
-        raise ValueError(f'One of {paths} doesn\'t look like a .fit file.')
+def analyze_files(paths, save, save_suffix):
     for path in paths:
         track = Track.from_path(path)
-        figure = plt.figure(layout='constrained')
+        figure = plt.figure(
+            layout='constrained', figsize=(19.2, 10.8), dpi=100)
         figure.suptitle(path)
         plot_track(track, figure)
-    plt.show()
+        if save:
+            if save_suffix:
+                save_suffix = '.' + save_suffix
+            file_name = f'{path.stem}{save_suffix}.png'
+            figure.savefig(path.parent / file_name)
+    if not save:
+        plt.show()
 
 
 def plot_track(track, figure):
@@ -398,8 +403,17 @@ def add_dynamics_subplots(track, figure, gridspecs):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('paths', nargs='+', type=pathlib.Path)
+    parser.add_argument(
+        '--save', action='store_true',
+        help='Save plots instead of showing them.')
+    parser.add_argument(
+        '--save-suffix', default='',
+        help='Suffix to add to the file when saving.')
     args = parser.parse_args()
-    analyze_files(args.paths)
+    if {p.suffix for p in args.paths} != {'.fit'}:
+        raise ValueError(
+            f'One of {args.paths} doesn\'t look like a .fit file.')
+    analyze_files(args.paths, save=args.save, save_suffix=args.save_suffix)
 
 
 if __name__ == '__main__':
