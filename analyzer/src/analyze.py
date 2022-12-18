@@ -352,29 +352,46 @@ class MapSubplot:
         return self.color_gradient[percent_to_max].hex
 
 
-def analyze_files(paths, save, save_suffix):
+def analyze_files(paths, save, save_suffix, plot_separately):
+    figures_with_paths = []
     for path in paths:
         track = Track.from_path(path)
-        figure = plt.figure(
-            layout='constrained', figsize=(19.2, 10.8), dpi=100)
-        figure.suptitle(path)
-        plot_track(track, figure)
-        if save:
+        figures_with_paths.extend(plot_track(track, path, plot_separately))
+    if save:
+        for figure, path in figures_with_paths:
             if save_suffix:
                 save_suffix = '.' + save_suffix
             file_name = f'{path.stem}{save_suffix}.png'
             figure.savefig(path.parent / file_name)
-    if not save:
+    else:
         plt.show()
 
 
-def plot_track(track, figure):
-    gridspec = figure.add_gridspec(
-        3, 2, figure=figure, height_ratios=[2, 1, 2])
-    add_dynamics_subplots(
-        track, figure, [gridspec[0, 0:1], gridspec[1, 0:1], gridspec[2, 0:1]])
-    map_subplot = MapSubplot(figure, gridspec[0:, 1], min_spike_millig=3000)
+def plot_track(track, path, plot_separately):
+    def make_figure():
+        figure = plt.figure(
+            layout='constrained', figsize=(19.2, 10.8), dpi=100)
+        figure.suptitle(path)
+        return figure
+
+    if plot_separately:
+        dynamics_figure, map_figure = make_figure(), make_figure()
+        figures = [dynamics_figure, map_figure]
+        dynamics_specs = list(
+            dynamics_figure.add_gridspec(3, 1, height_ratios=[2, 1, 2]))
+        map_spec = map_figure.add_gridspec(1, 1)[0]
+    else:
+        figure = make_figure()
+        dynamics_figure = map_figure = figure
+        figures = [figure]
+        gridspec = figure.add_gridspec(
+            3, 2, figure=figure, height_ratios=[2, 1, 2])
+        dynamics_specs = [gridspec[0, 0:1], gridspec[1, 0:1], gridspec[2, 0:1]]
+        map_spec = gridspec[0:, 1]
+    add_dynamics_subplots(track, dynamics_figure, dynamics_specs)
+    map_subplot = MapSubplot(map_figure, map_spec, min_spike_millig=3000)
     map_subplot.plot(track)
+    return figures
 
 
 def add_dynamics_subplots(track, figure, gridspecs):
@@ -409,11 +426,16 @@ def main():
     parser.add_argument(
         '--save-suffix', default='',
         help='Suffix to add to the file when saving.')
+    parser.add_argument(
+        '--plot-separately', action='store_true',
+        help='Plot graphs and map separately.')
     args = parser.parse_args()
     if {p.suffix for p in args.paths} != {'.fit'}:
         raise ValueError(
             f'One of {args.paths} doesn\'t look like a .fit file.')
-    analyze_files(args.paths, save=args.save, save_suffix=args.save_suffix)
+    analyze_files(
+        args.paths, save=args.save, save_suffix=args.save_suffix,
+        plot_separately=args.plot_separately)
 
 
 if __name__ == '__main__':
