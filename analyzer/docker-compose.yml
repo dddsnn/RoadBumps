@@ -1,8 +1,0 @@
-version: "3.9"
-
-services:
-  analyze:
-    build: .
-    volumes:
-      - ./fit:/fit
-      - ./cartopy_cache:/cartopy_cache
