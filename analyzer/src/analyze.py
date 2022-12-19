@@ -254,20 +254,10 @@ class Track:
 
 
 class MapSubplot:
-    TRACK_TIME_SLICE_SECONDS = 10
-    SPIKE_TIME_SLICE_SECONDS = 1
-
-    def __init__(
-            self, figure, gridspec, rolling_average_window_duration_seconds=10,
-            track_red_limit_millig=300, min_spike_millig=2000,
-            spike_red_limit_millig=4000):
+    def __init__(self, figure, gridspec, conf):
         self.figure = figure
         self.gridspec = gridspec
-        self.rolling_average_window_duration_seconds = (
-            rolling_average_window_duration_seconds)
-        self.track_red_limit_millig = track_red_limit_millig
-        self.min_spike_millig = min_spike_millig
-        self.spike_red_limit_millig = spike_red_limit_millig
+        self.conf = conf
         self._axes = None
         self.projection = cartopy.crs.Mercator()
         self.color_gradient = list(
@@ -288,13 +278,13 @@ class MapSubplot:
 
     def _plot_track(self, track):
         track.ensure_rolling_average_absolute_accels(
-            self.rolling_average_window_duration_seconds, True)
-        for slice in track.time_slices(self.TRACK_TIME_SLICE_SECONDS):
+            self.conf.rolling_average_window_duration_seconds, True)
+        for slice in track.time_slices(self.conf.track_time_slice_seconds):
             line = shapely.geometry.LineString((p.lon, p.lat) for p in slice)
             att_abs_accels = [
                 p.analysis_data[(
                     'rolling_average_absolute_accels',
-                    self.rolling_average_window_duration_seconds, True)]
+                    self.conf.rolling_average_window_duration_seconds, True)]
                 for p in slice]
             avg_att_abs_accel = sum(att_abs_accels) / len(att_abs_accels)
             self._axes.add_geometries(
@@ -304,15 +294,15 @@ class MapSubplot:
 
     def _plot_spikes(self, track):
         spikes = []
-        for slice in track.time_slices(self.SPIKE_TIME_SLICE_SECONDS):
+        for slice in track.time_slices(self.conf.spike_time_slice_seconds):
             max_accel = max(abs(p.accel) for p in slice)
-            if max_accel >= self.min_spike_millig:
+            if max_accel >= self.conf.spike_lower_limit_millig:
                 mid = slice[len(slice) // 2]
                 spikes.append((mid.lon, mid.lat, max_accel))
         for x, y, accel in spikes:
-            accel_over_min = accel - self.min_spike_millig
+            accel_over_min = accel - self.conf.spike_lower_limit_millig
             markersize = 5 + 10 * capped_fraction(
-                accel_over_min, self.spike_red_limit_millig)
+                accel_over_min, self.conf.spike_upper_limit_millig)
             self._axes.plot(
                 x, y, 'o', markersize=markersize, color='purple', alpha=0.5,
                 transform=self.projection.as_geodetic())
@@ -347,16 +337,17 @@ class MapSubplot:
 
     def _color_for_accel(self, abs_accel_millig):
         percent_to_max = int(
-            capped_fraction(abs_accel_millig, self.track_red_limit_millig)
-            * 100)
+            capped_fraction(
+                abs_accel_millig, self.conf.track_upper_limit_millig) * 100)
         return self.color_gradient[percent_to_max].hex
 
 
-def analyze_files(paths, save, save_suffix, plot_separately):
+def analyze_files(paths, save, save_suffix, plot_separately, conf):
     figures_with_paths = []
     for path in paths:
         track = Track.from_path(path)
-        figures_with_paths.extend(plot_track(track, path, plot_separately))
+        figures_with_paths.extend(
+            plot_track(track, path, plot_separately, conf))
     if save:
         for figure, path in figures_with_paths:
             if save_suffix:
@@ -367,7 +358,7 @@ def analyze_files(paths, save, save_suffix, plot_separately):
         plt.show()
 
 
-def plot_track(track, path, plot_separately):
+def plot_track(track, path, plot_separately, conf):
     def make_figure():
         figure = plt.figure(
             layout='constrained', figsize=(19.2, 10.8), dpi=100)
@@ -388,13 +379,13 @@ def plot_track(track, path, plot_separately):
             3, 2, figure=figure, height_ratios=[2, 1, 2])
         dynamics_specs = [gridspec[0, 0:1], gridspec[1, 0:1], gridspec[2, 0:1]]
         map_spec = gridspec[0:, 1]
-    add_dynamics_subplots(track, dynamics_figure, dynamics_specs)
-    map_subplot = MapSubplot(map_figure, map_spec, min_spike_millig=3000)
+    add_dynamics_subplots(track, dynamics_figure, dynamics_specs, conf)
+    map_subplot = MapSubplot(map_figure, map_spec, conf)
     map_subplot.plot(track)
     return figures
 
 
-def add_dynamics_subplots(track, figure, gridspecs):
+def add_dynamics_subplots(track, figure, gridspecs, conf):
     assert len(gridspecs) == 3
     accel_axes = figure.add_subplot(gridspecs[0])
     speed_axes = figure.add_subplot(gridspecs[1], sharex=accel_axes)
@@ -407,14 +398,29 @@ def add_dynamics_subplots(track, figure, gridspecs):
     speed_axes.yaxis.set_label_text('km/h')
     speed_axes.legend()
     accel_analysis_axes.plot(
-        track.tss, track.rolling_average_absolute_accels(10), color='black',
+        track.tss,
+        track.rolling_average_absolute_accels(
+            conf.rolling_average_window_duration_seconds,
+            attenuate_by_speed=False), color='black',
         label='Absolute acceleration')
     accel_analysis_axes.plot(
         track.tss,
-        track.rolling_average_absolute_accels(10, attenuate_by_speed=True),
-        color='blue', label='Attenuated absolute acceleration')
+        track.rolling_average_absolute_accels(
+            conf.rolling_average_window_duration_seconds,
+            attenuate_by_speed=True), color='blue',
+        label='Attenuated absolute acceleration')
     accel_analysis_axes.yaxis.set_label_text('mg')
     accel_analysis_axes.legend()
+
+
+@dc.dataclass
+class AnalysisConfig:
+    track_time_slice_seconds: float
+    spike_time_slice_seconds: float
+    rolling_average_window_duration_seconds: float
+    track_upper_limit_millig: float
+    spike_lower_limit_millig: float
+    spike_upper_limit_millig: float
 
 
 def main():
@@ -429,13 +435,44 @@ def main():
     parser.add_argument(
         '--plot-separately', action='store_true',
         help='Plot graphs and map separately.')
+    parser.add_argument(
+        '--track-time-slice-seconds', type=float, default=5,
+        help='Duration of chunks into which the track is sliced for '
+        'continuous analysis. Metrics of these chunks are averaged and drawn '
+        'as one segment on the map.')
+    parser.add_argument(
+        '--spike-time-slice-seconds', type=float, default=1,
+        help='Duration of chunks into which the track is sliced for spike '
+        'analysis. Only the maximum acceleration value of each chunk decides '
+        'whether a spike exists for the chunk.')
+    parser.add_argument(
+        '--rolling-average-window-duration-seconds', type=float, default=10,
+        help='Lookback into the past when calculating a rolling average '
+        'absolute acceleration for each individual position.')
+    parser.add_argument(
+        '--track-upper-limit-millig', type=float, default=300,
+        help='Lowest average attenuated acceleration at which a position is '
+        'considered maximally bad (i.e. will be drawn red).')
+    parser.add_argument(
+        '--spike-lower-limit-millig', type=float, default=3000,
+        help='Lowest acceleration needed for a position to be considered a '
+        'spike.')
+    parser.add_argument(
+        '--spike-upper-limit-millig', type=float, default=4000,
+        help='Lowest acceleration for a spike to be considered maximally bad '
+        '(i.e. largest possible circle).')
     args = parser.parse_args()
     if {p.suffix for p in args.paths} != {'.fit'}:
         raise ValueError(
             f'One of {args.paths} doesn\'t look like a .fit file.')
+    analysis_config = AnalysisConfig(
+        args.track_time_slice_seconds, args.spike_time_slice_seconds,
+        args.rolling_average_window_duration_seconds,
+        args.track_upper_limit_millig, args.spike_lower_limit_millig,
+        args.spike_upper_limit_millig)
     analyze_files(
         args.paths, save=args.save, save_suffix=args.save_suffix,
-        plot_separately=args.plot_separately)
+        plot_separately=args.plot_separately, conf=analysis_config)
 
 
 if __name__ == '__main__':
