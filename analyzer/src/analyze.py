@@ -52,6 +52,56 @@ class Position:
         return mps * 3.6
 
 
+class Attenuator:
+    """
+    A method of attenuating acceleration by speed.
+
+    Attenuates a given acceleration a at speed v to a_att as
+
+    a_att = (1 - (min(1, v / v_cap) ** exp) * att) * a
+
+    Here, v_cap is the speed at which maximum attenuation is applied (i.e.
+    higher speeds get the same attenuation), exp is an exponent for nonlinear
+    attenuation, and att is the amount of attenuation to apply at the speed
+    cap.
+
+    Specify an attenation as a string with format
+    "(linear|quadratic|cubic),<v_cap>,<att>", where the first argument
+    determines exp.
+    """
+    _exponents = (('linear', 1), ('quadratic', 2), ('cubic', 3))
+
+    def __init__(self, spec):
+        try:
+            args = spec.split(',')
+            self.exponent = next(e for m, e in self._exponents if m == args[0])
+            self.speed_cap = float(args[1])
+            self.attenuation_at_max_speed = float(args[2])
+            assert 0 <= self.attenuation_at_max_speed <= 1
+        except Exception as e:
+            raise ValueError(
+                'Invalid attenation specification, must be '
+                '"(linear|quadratic|cubic),<v_cap>,<att>" with 0 <= att <= 1.'
+            ) from e
+
+    @property
+    def spec(self):
+        method = next(m for m, e in self._exponents if e == self.exponent)
+        return f'{method},{self.speed_cap},{self.attenuation_at_max_speed}'
+
+    def __eq__(self, other):
+        return self.spec == other.spec
+
+    def __hash__(self):
+        return hash(self.spec)
+
+    def attenuate(self, accel, speed_kph):
+        fraction_of_max_speed = capped_fraction(speed_kph, self.speed_cap)
+        attenuation = ((fraction_of_max_speed**self.exponent)
+                       * self.attenuation_at_max_speed)
+        return (1 - attenuation) * accel
+
+
 class Track:
     EXPECTED_ACCEL_VALUES_PER_MESSAGE = 25
 
@@ -201,19 +251,19 @@ class Track:
         return [p.speed_kph for p in self.positions]
 
     def rolling_average_absolute_accels(
-            self, window_duration_seconds, attenuate_by_speed=False):
+            self, window_duration_seconds, attenuator):
         self.ensure_rolling_average_absolute_accels(
-            window_duration_seconds, attenuate_by_speed)
+            window_duration_seconds, attenuator)
         key = (
             'rolling_average_absolute_accels', window_duration_seconds,
-            attenuate_by_speed)
+            attenuator)
         return [p.analysis_data[key] for p in self.positions]
 
     def ensure_rolling_average_absolute_accels(
-            self, window_duration_seconds, attenuate_by_speed):
+            self, window_duration_seconds, attenuator):
         key = (
             'rolling_average_absolute_accels', window_duration_seconds,
-            attenuate_by_speed)
+            attenuator)
         if not self.positions or key in self.positions[0].analysis_data:
             return
         window_duration = datetime.timedelta(seconds=window_duration_seconds)
@@ -224,14 +274,10 @@ class Track:
             while window[0].ts < min_ts:
                 window.popleft()
             absolute_accel = sum(abs(p.accel) for p in window) / len(window)
-            if attenuate_by_speed:
-                absolute_accel = self._attenuate_by_speed(
+            if attenuator:
+                absolute_accel = attenuator.attenuate(
                     absolute_accel, position.speed_kph)
             position.analysis_data[key] = absolute_accel
-
-    def _attenuate_by_speed(self, accel, speed_kph):
-        factor = 1 - (capped_fraction(speed_kph, 40)**2 * 0.75)
-        return factor * accel
 
     def time_slices(self, duration_seconds):
         slice_duration = datetime.timedelta(seconds=duration_seconds)
@@ -278,14 +324,15 @@ class MapSubplot:
 
     def _plot_track(self, track):
         track.ensure_rolling_average_absolute_accels(
-            self.conf.rolling_average_window_duration_seconds, True)
+            self.conf.rolling_average_window_duration_seconds,
+            self.conf.attenuator)
         for slice in track.time_slices(self.conf.track_time_slice_seconds):
             line = shapely.geometry.LineString((p.lon, p.lat) for p in slice)
             att_abs_accels = [
                 p.analysis_data[(
                     'rolling_average_absolute_accels',
-                    self.conf.rolling_average_window_duration_seconds, True)]
-                for p in slice]
+                    self.conf.rolling_average_window_duration_seconds,
+                    self.conf.attenuator)] for p in slice]
             avg_att_abs_accel = sum(att_abs_accels) / len(att_abs_accels)
             self._axes.add_geometries(
                 [line], self.projection.as_geodetic(), linewidth=3,
@@ -400,15 +447,13 @@ def add_dynamics_subplots(track, figure, gridspecs, conf):
     accel_analysis_axes.plot(
         track.tss,
         track.rolling_average_absolute_accels(
-            conf.rolling_average_window_duration_seconds,
-            attenuate_by_speed=False), color='black',
-        label='Absolute acceleration')
+            conf.rolling_average_window_duration_seconds, attenuator=None),
+        color='black', label='Absolute acceleration')
     accel_analysis_axes.plot(
         track.tss,
         track.rolling_average_absolute_accels(
-            conf.rolling_average_window_duration_seconds,
-            attenuate_by_speed=True), color='blue',
-        label='Attenuated absolute acceleration')
+            conf.rolling_average_window_duration_seconds, conf.attenuator),
+        color='blue', label='Attenuated absolute acceleration')
     accel_analysis_axes.yaxis.set_label_text('mg')
     accel_analysis_axes.legend()
 
@@ -421,6 +466,7 @@ class AnalysisConfig:
     track_upper_limit_millig: float
     spike_lower_limit_millig: float
     spike_upper_limit_millig: float
+    attenuator: Attenuator
 
 
 def main():
@@ -436,40 +482,42 @@ def main():
         '--plot-separately', action='store_true',
         help='Plot graphs and map separately.')
     parser.add_argument(
-        '--track-time-slice-seconds', type=float, default=5,
-        help='Duration of chunks into which the track is sliced for '
-        'continuous analysis. Metrics of these chunks are averaged and drawn '
-        'as one segment on the map.')
+        '--track-time-slice', type=float, default=5,
+        help='Duration of chunks in seconds into which the track is sliced '
+        'for continuous analysis. Metrics of these chunks are averaged and '
+        'drawn as one segment on the map.')
     parser.add_argument(
-        '--spike-time-slice-seconds', type=float, default=1,
-        help='Duration of chunks into which the track is sliced for spike '
-        'analysis. Only the maximum acceleration value of each chunk decides '
-        'whether a spike exists for the chunk.')
+        '--spike-time-slice', type=float, default=1,
+        help='Duration of chunks in seconds into which the track is sliced '
+        'for spike analysis. Only the maximum acceleration value of each '
+        'chunk decides whether a spike exists for the chunk.')
     parser.add_argument(
-        '--rolling-average-window-duration-seconds', type=float, default=10,
-        help='Lookback into the past when calculating a rolling average '
-        'absolute acceleration for each individual position.')
+        '--rolling-average-window-duration', type=float, default=10,
+        help='Lookback into the past in seconds when calculating a rolling '
+        'average absolute acceleration for each individual position.')
     parser.add_argument(
-        '--track-upper-limit-millig', type=float, default=300,
-        help='Lowest average attenuated acceleration at which a position is '
-        'considered maximally bad (i.e. will be drawn red).')
+        '--track-upper-limit', type=float, default=300,
+        help='Lowest average attenuated acceleration in millig at which a '
+        'position is considered maximally bad (i.e. will be drawn red).')
     parser.add_argument(
-        '--spike-lower-limit-millig', type=float, default=3000,
-        help='Lowest acceleration needed for a position to be considered a '
-        'spike.')
+        '--spike-lower-limit', type=float, default=3000,
+        help='Lowest acceleration in millig needed for a position to be '
+        'considered a spike.')
     parser.add_argument(
-        '--spike-upper-limit-millig', type=float, default=4000,
-        help='Lowest acceleration for a spike to be considered maximally bad '
-        '(i.e. largest possible circle).')
+        '--spike-upper-limit', type=float, default=4000,
+        help='Lowest acceleration in millig for a spike to be considered '
+        'maximally bad (i.e. largest possible circle).')
+    parser.add_argument(
+        '--attenuation', type=Attenuator, default=Attenuator('linear,40,0.5'),
+        help='Method of speed attenuation.')
     args = parser.parse_args()
     if {p.suffix for p in args.paths} != {'.fit'}:
         raise ValueError(
             f'One of {args.paths} doesn\'t look like a .fit file.')
     analysis_config = AnalysisConfig(
-        args.track_time_slice_seconds, args.spike_time_slice_seconds,
-        args.rolling_average_window_duration_seconds,
-        args.track_upper_limit_millig, args.spike_lower_limit_millig,
-        args.spike_upper_limit_millig)
+        args.track_time_slice, args.spike_time_slice,
+        args.rolling_average_window_duration, args.track_upper_limit,
+        args.spike_lower_limit, args.spike_upper_limit, args.attenuation)
     analyze_files(
         args.paths, save=args.save, save_suffix=args.save_suffix,
         plot_separately=args.plot_separately, conf=analysis_config)
