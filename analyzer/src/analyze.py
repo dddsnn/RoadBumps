@@ -409,7 +409,7 @@ def plot_track(track, path, plot_separately, conf):
     def make_figure():
         figure = plt.figure(
             layout='constrained', figsize=(19.2, 10.8), dpi=100)
-        figure.suptitle(path)
+        figure.suptitle(f'{path}\n{conf}')
         return figure
 
     if plot_separately:
@@ -467,6 +467,17 @@ class AnalysisConfig:
     spike_lower_limit_millig: float
     spike_upper_limit_millig: float
     attenuator: Attenuator
+
+    def __str__(self):
+        return '; '.join([
+            f'time slice: {self.track_time_slice_seconds}s (track)/'
+            f'{self.spike_time_slice_seconds}s (spikes)',
+            'roll. avg. lookback: '
+            f'{self.rolling_average_window_duration_seconds}s',
+            f'track red limit: {self.track_upper_limit_millig}mg',
+            f'spike range: {self.spike_lower_limit_millig}mg-'
+            f'{self.spike_upper_limit_millig}mg',
+            f'attenuation: {self.attenuator.spec}'])
 
 
 def main():
