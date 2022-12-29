@@ -33,9 +33,18 @@ class ParseError(Exception):
     pass
 
 
+class IncompletePositionData(Exception):
+    """
+    Raised during message parsing if necessary position data is missing.
+
+    This can be the case simply if the message is not a position message, or if
+    some fields are missing (usually if there is no GNSS fix yet, but the
+    acceleration sensor already works).
+    """
+
+
 @dc.dataclass
 class Position:
-    import datetime
     ts: datetime.datetime
     lon: float
     lat: float
@@ -115,33 +124,40 @@ class Track:
             fit_file.parse()
         positions = []
         for message in fit_file.messages:
-            ts = cls._field_value(message, 'timestamp', datetime.datetime)
-            lon_semicircles = cls._field_value(message, 'position_long')
-            lat_semicircles = cls._field_value(message, 'position_lat')
-            speed = cls._field_value(message, 'enhanced_speed')
-            accel_fields = sorted((
-                field for field in message.fields
-                if field.name.startswith('accel')),
-                                  key=cls._accel_field_bounds)
-            accel_fields = accel_fields or None
-            data_fields = [
-                lon_semicircles, lat_semicircles, speed, accel_fields]
-            if not all(v is not None for v in [ts] + data_fields):
-                if any(v is not None for v in data_fields):
-                    logger.warning(
-                        'Not all expected values were present, but some were '
-                        f'({data_fields}).')
+            try:
+                ts, lon_semicircles, lat_semicircles, speed, accels = (
+                    cls._extract_position_data(message))
+            except IncompletePositionData:
                 continue
-            cls._assert_valid_accel_fields(accel_fields)
-            accels = cls._extract_accels(accel_fields)
             for accel in cls._adjusted_accels(accels):
                 positions.append(
                     Position(
                         ts, cls._semicircles_to_deg(lon_semicircles),
                         cls._semicircles_to_deg(lat_semicircles), speed,
                         accel))
-        cls._check_consecutive_positions(positions)
+        cls._check_position_continuity(fit_file.messages, positions)
         return cls(positions)
+
+    @classmethod
+    def _extract_position_data(cls, message):
+        ts = cls._field_value(message, 'timestamp', datetime.datetime)
+        lon_semicircles = cls._field_value(message, 'position_long')
+        lat_semicircles = cls._field_value(message, 'position_lat')
+        speed = cls._field_value(message, 'enhanced_speed')
+        accel_fields = sorted((
+            field for field in message.fields
+            if field.name.startswith('accel')), key=cls._accel_field_bounds)
+        accel_fields = accel_fields or None
+        data_fields = [lon_semicircles, lat_semicircles, speed, accel_fields]
+        if not all(v is not None for v in [ts] + data_fields):
+            if any(v is not None for v in data_fields):
+                raise IncompletePositionData(
+                    'Not all expected values were present, but some were.')
+            else:
+                raise IncompletePositionData('Not a position message.')
+        cls._assert_valid_accel_fields(accel_fields)
+        accels = cls._extract_accels(accel_fields)
+        return ts, lon_semicircles, lat_semicircles, speed, accels
 
     @classmethod
     def _field_value(cls, message, name, field_type=None):
@@ -192,7 +208,7 @@ class Track:
                     num_out_of_bounds += 1
                 accels.append(accel)
         if len(accels) != cls.EXPECTED_ACCEL_VALUES_PER_MESSAGE:
-            raise ParseError(
+            raise IncompletePositionData(
                 f'Unexpected number of acceleration values ({len(accels)}).')
         return accels
 
@@ -208,6 +224,7 @@ class Track:
 
     @classmethod
     def _adjusted_accels(cls, accels):
+        # The sensor will show -1g in idle. Add 1g to make 0 the baseline.
         return [a + 1000 for a in accels]
 
     @classmethod
@@ -215,14 +232,57 @@ class Track:
         return math.degrees((semicircles * math.pi) / 0x80000000)
 
     @classmethod
-    def _check_consecutive_positions(cls, positions):
+    def _check_position_continuity(cls, messages, positions):
+        start_ts, end_ts = cls._check_start_end_offsets(messages, positions)
+        intervals = []
+        interval_start_ts = None
         for p1, p2 in it.pairwise(positions):
+            interval_start_ts = interval_start_ts or p1.ts
             same_ts = p1.ts == p2.ts
             one_second_apart = p1.ts + datetime.timedelta(seconds=1) == p2.ts
             if not same_ts and not one_second_apart:
-                logger.warning(
-                    'Position timestamps don\'t have equal or consecutive '
-                    f'timestamps: {p1.ts} - {p2.ts}.')
+                intervals.append((interval_start_ts, p1.ts))
+                interval_start_ts = p2.ts
+        if interval_start_ts:
+            intervals.append((interval_start_ts, p2.ts))
+        discontinuous_durations = (
+            right_start - left_end
+            for ((_, left_end), (right_start, _)) in it.pairwise(intervals))
+        discontinuous_duration = sum(
+            discontinuous_durations, start=datetime.timedelta())
+        if discontinuous_duration:
+            discontinuous_fraction = (
+                discontinuous_duration / (end_ts - start_ts))
+            logger.info(
+                f'There are {len(intervals)-1} discontinuities totalling a '
+                f'duration of {discontinuous_duration}. This is '
+                f'{discontinuous_fraction*100:.2f}% of the total.')
+
+    @classmethod
+    def _check_start_end_offsets(cls, messages, positions):
+        try:
+            start_ts, end_ts = positions[0].ts, positions[-1].ts
+            duration = end_ts - start_ts
+            messages_start_ts = next(
+                ts for ts in (
+                    cls._field_value(m, 'timestamp', datetime.datetime)
+                    for m in messages) if ts is not None)
+            messages_end_ts = next(
+                ts for ts in (
+                    cls._field_value(m, 'timestamp', datetime.datetime)
+                    for m in reversed(messages)) if ts is not None)
+        except IndexError:
+            logger.warning('No complete positions in track.')
+            return None, None
+        logger.info(
+            f'Parsed track spanning {start_ts} - {end_ts} ({duration}).')
+        start_offset = start_ts - messages_start_ts
+        end_offset = messages_end_ts - end_ts
+        if start_offset or end_offset:
+            logger.info(
+                f'Messages start {start_offset} earlier and end {end_offset} '
+                'later than positions.')
+        return start_ts, end_ts
 
     @property
     def positions(self):
