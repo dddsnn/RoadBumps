@@ -453,17 +453,18 @@ class MapSubplot:
 
 
 def analyze_files(paths, save, save_suffix, plot_separately, conf):
-    figures_with_paths = []
+    figures_with_base_paths = []
     for path in paths:
         track = Track.from_path(path)
-        figures_with_paths.extend(
-            plot_track(track, path, plot_separately, conf))
+        figures_with_base_paths.extend(
+            plot_track(track, path.with_suffix(''), plot_separately, conf))
     if save:
-        for figure, path in figures_with_paths:
-            if save_suffix:
-                save_suffix = '.' + save_suffix
-            file_name = f'{path.stem}{save_suffix}.png'
-            figure.savefig(path.parent / file_name)
+        if save_suffix:
+            save_suffix = '.' + save_suffix
+        save_suffix += '.png'
+        for figure, base_path in figures_with_base_paths:
+            file_name = base_path.name + save_suffix
+            figure.savefig(base_path.parent / file_name)
     else:
         plt.show()
 
@@ -477,14 +478,15 @@ def plot_track(track, path, plot_separately, conf):
 
     if plot_separately:
         dynamics_figure, map_figure = make_figure(), make_figure()
-        figures = [dynamics_figure, map_figure]
+        figures = [(dynamics_figure, path.with_name(path.name + '.graphs')),
+                   (map_figure, path.with_name(path.name + '.map'))]
         dynamics_specs = list(
             dynamics_figure.add_gridspec(3, 1, height_ratios=[2, 1, 2]))
         map_spec = map_figure.add_gridspec(1, 1)[0]
     else:
         figure = make_figure()
         dynamics_figure = map_figure = figure
-        figures = [figure]
+        figures = [(figure, path)]
         gridspec = figure.add_gridspec(
             3, 2, figure=figure, height_ratios=[2, 1, 2])
         dynamics_specs = [gridspec[0, 0:1], gridspec[1, 0:1], gridspec[2, 0:1]]
