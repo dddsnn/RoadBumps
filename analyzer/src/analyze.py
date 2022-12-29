@@ -365,7 +365,7 @@ class MapSubplot:
         self.gridspec = gridspec
         self.conf = conf
         self._axes = None
-        self.projection = cartopy.crs.Mercator()
+        self.projection = cartopy.crs.Mercator.GOOGLE
         self.color_gradient = list(
             colour.Color('green').range_to(colour.Color('red'), 101))
         cartopy.config['cache_dir'] = (
@@ -415,6 +415,9 @@ class MapSubplot:
                 transform=self.projection.as_geodetic())
 
     def _geo_axes_class_with_projection(self):
+        # We have to create a GeoAxes class that hardcodes our desired
+        # projection because matplotlib won't let us pass a kwarg named
+        # projection through to the axes class.
         projection = self.projection
 
         class GeoAxes(cartopy.mpl.geoaxes.GeoAxes):
