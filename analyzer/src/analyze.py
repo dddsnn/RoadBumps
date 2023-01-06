@@ -505,9 +505,15 @@ def add_dynamics_subplots(track, figure, gridspecs, conf):
     accel_axes.plot(
         track.tss, track.accels, color='black', label='Raw acceleration')
     accel_axes.yaxis.set_label_text('mg')
+    accel_axes.hlines([
+        conf.spike_lower_limit_millig, conf.spike_upper_limit_millig,
+        -conf.spike_lower_limit_millig, -conf.spike_upper_limit_millig],
+                      track.tss[0], track.tss[-1], linestyles='dashed')
     accel_axes.legend()
     speed_axes.plot(track.tss, track.speeds_kph, color='black', label='Speed')
     speed_axes.yaxis.set_label_text('km/h')
+    speed_axes.hlines([conf.attenuator.speed_cap], track.tss[0], track.tss[-1],
+                      linestyles='dashed')
     speed_axes.legend()
     accel_analysis_axes.plot(
         track.tss,
@@ -520,6 +526,8 @@ def add_dynamics_subplots(track, figure, gridspecs, conf):
             conf.rolling_average_window_duration_seconds, conf.attenuator),
         color='blue', label='Attenuated absolute acceleration')
     accel_analysis_axes.yaxis.set_label_text('mg')
+    accel_analysis_axes.hlines([conf.track_upper_limit_millig], track.tss[0],
+                               track.tss[-1], linestyles='dashed')
     accel_analysis_axes.legend()
 
 
