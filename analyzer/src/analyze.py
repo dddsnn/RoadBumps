@@ -550,6 +550,18 @@ class AnalysisConfig:
     spike_upper_limit_millig: float
     attenuator: Attenuator
 
+    def __post_init__(self):
+        try:
+            assert self.track_time_slice_seconds > 0
+            assert self.spike_time_slice_seconds > 0
+            assert self.rolling_average_window_duration_seconds > 0
+            assert (
+                self.track_lower_limit_millig < self.track_upper_limit_millig)
+            assert (
+                self.spike_lower_limit_millig < self.spike_upper_limit_millig)
+        except AssertionError as e:
+            raise ValueError('Invalid configuration.') from e
+
     def __str__(self):
         return '; '.join([
             f'time slice: {self.track_time_slice_seconds}s (track)/'
