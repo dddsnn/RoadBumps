@@ -119,11 +119,12 @@ configurable via `--track-time-slice`).
 
 The color is calculated for each such chunk by averaging the attenuated average
 absolute accelerations of positions in it (it's an average of an average). If
-this value is 0, the chunk is drawn green, for values beyond a threshold
-(default 300 mg, `--track-upper-limit`) the track is assumed to be maximally
-bad and drawn red. Everything in between scales linearly between these colors.
-The threshold at which the track is maximally bad is also plotted as a
-horizontal line in the bottom graph.
+this value is less than or equal a lower threshold (default 100 mg,
+`--track-lower-limit`), the chunk is drawn green. For values beyond an upper
+threshold (default 300 mg, `--track-upper-limit`) the track is assumed to be
+maximally bad and drawn red. Everything in between scales linearly between
+these colors. The threshold at which the track is maximally bad is also plotted
+as a horizontal line in the bottom graph.
 
 The map also shows purple dots of varying sizes where the acceleration has
 extreme spikes. The track is again split into chunks of several seconds

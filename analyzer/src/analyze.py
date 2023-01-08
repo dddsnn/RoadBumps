@@ -447,9 +447,13 @@ class MapSubplot:
             max_y + buffer_y)
 
     def _color_for_accel(self, abs_accel_millig):
+        adjusted_accel = max(
+            0, abs_accel_millig - self.conf.track_lower_limit_millig)
+        adjusted_upper_limit = (
+            self.conf.track_upper_limit_millig
+            - self.conf.track_lower_limit_millig)
         percent_to_max = int(
-            capped_fraction(
-                abs_accel_millig, self.conf.track_upper_limit_millig) * 100)
+            capped_fraction(adjusted_accel, adjusted_upper_limit) * 100)
         return self.color_gradient[percent_to_max].hex
 
 
@@ -527,6 +531,8 @@ def add_dynamics_subplots(track, figure, gridspecs, conf):
             conf.rolling_average_window_duration_seconds, conf.attenuator),
         color='blue', label='Attenuated absolute acceleration')
     accel_analysis_axes.yaxis.set_label_text('mg')
+    accel_analysis_axes.hlines([conf.track_lower_limit_millig], track.tss[0],
+                               track.tss[-1], linestyles='dashed')
     accel_analysis_axes.hlines([conf.track_upper_limit_millig], track.tss[0],
                                track.tss[-1], linestyles='dashed')
     accel_analysis_axes.legend()
@@ -537,6 +543,7 @@ class AnalysisConfig:
     track_time_slice_seconds: float
     spike_time_slice_seconds: float
     rolling_average_window_duration_seconds: float
+    track_lower_limit_millig: float
     track_upper_limit_millig: float
     plot_spikes: bool
     spike_lower_limit_millig: float
@@ -549,7 +556,8 @@ class AnalysisConfig:
             f'{self.spike_time_slice_seconds}s (spikes)',
             'roll. avg. lookback: '
             f'{self.rolling_average_window_duration_seconds}s',
-            f'track red limit: {self.track_upper_limit_millig}mg',
+            f'track range: {self.track_lower_limit_millig}mg-'
+            f'{self.track_upper_limit_millig}mg',
             f'spike range: {self.spike_lower_limit_millig}mg-'
             f'{self.spike_upper_limit_millig}mg',
             f'attenuation: {self.attenuator.spec}'])
@@ -582,6 +590,11 @@ def main():
         help='Lookback into the past in seconds when calculating a rolling '
         'average absolute acceleration for each individual position.')
     parser.add_argument(
+        '--track-lower-limit', type=float, default=100,
+        help='Threshold for average attenuated acceleration in millig at or '
+        'below which the road quality at a position is considered excellent '
+        '(i.e. will be drawn green).')
+    parser.add_argument(
         '--track-upper-limit', type=float, default=300,
         help='Lowest average attenuated acceleration in millig at which a '
         'position is considered maximally bad (i.e. will be drawn red).')
@@ -604,9 +617,9 @@ def main():
             f'One of {args.paths} doesn\'t look like a .fit file.')
     analysis_config = AnalysisConfig(
         args.track_time_slice, args.spike_time_slice,
-        args.rolling_average_window_duration, args.track_upper_limit,
-        not args.no_spikes, args.spike_lower_limit, args.spike_upper_limit,
-        args.attenuation)
+        args.rolling_average_window_duration, args.track_lower_limit,
+        args.track_upper_limit, not args.no_spikes, args.spike_lower_limit,
+        args.spike_upper_limit, args.attenuation)
     analyze_files(
         args.paths, save=args.save, save_suffix=args.save_suffix,
         plot_separately=args.plot_separately, conf=analysis_config)
