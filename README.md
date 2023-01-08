@@ -134,3 +134,5 @@ drawn. The size scales linearly from smallest at that lower threshold to
 largest at or beyond an upper threshold (default 4000 mg,
 `--spike-upper-limit`). The thresholds for lower and upper limits are also
 drawn as horizontal lines in the top graph.
+
+Plotting of spikes can be disabled with `--no-spikes`.

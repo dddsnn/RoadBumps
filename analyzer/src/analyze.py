@@ -380,7 +380,8 @@ class MapSubplot:
             cartopy.io.img_tiles.OSM(desired_tile_form='L', cache=True),
             self._zoom_level_for_extent(*extent), cmap='gray')
         self._plot_track(track)
-        self._plot_spikes(track)
+        if self.conf.plot_spikes:
+            self._plot_spikes(track)
 
     def _plot_track(self, track):
         track.ensure_rolling_average_absolute_accels(
@@ -537,6 +538,7 @@ class AnalysisConfig:
     spike_time_slice_seconds: float
     rolling_average_window_duration_seconds: float
     track_upper_limit_millig: float
+    plot_spikes: bool
     spike_lower_limit_millig: float
     spike_upper_limit_millig: float
     attenuator: Attenuator
@@ -584,6 +586,8 @@ def main():
         help='Lowest average attenuated acceleration in millig at which a '
         'position is considered maximally bad (i.e. will be drawn red).')
     parser.add_argument(
+        '--no-spikes', action='store_true', help='Disable plotting of spikes.')
+    parser.add_argument(
         '--spike-lower-limit', type=float, default=3000,
         help='Lowest acceleration in millig needed for a position to be '
         'considered a spike.')
@@ -601,7 +605,8 @@ def main():
     analysis_config = AnalysisConfig(
         args.track_time_slice, args.spike_time_slice,
         args.rolling_average_window_duration, args.track_upper_limit,
-        args.spike_lower_limit, args.spike_upper_limit, args.attenuation)
+        not args.no_spikes, args.spike_lower_limit, args.spike_upper_limit,
+        args.attenuation)
     analyze_files(
         args.paths, save=args.save, save_suffix=args.save_suffix,
         plot_separately=args.plot_separately, conf=analysis_config)
