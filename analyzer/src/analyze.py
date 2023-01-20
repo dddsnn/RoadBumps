@@ -129,12 +129,14 @@ class Track:
                     cls._extract_position_data(message))
             except IncompletePositionData:
                 continue
-            for accel in cls._adjusted_accels(accels):
+            seconds_per_accel = datetime.timedelta(seconds=1 / len(accels))
+            for i, accel in enumerate(accels):
                 positions.append(
                     Position(
-                        ts, cls._semicircles_to_deg(lon_semicircles),
+                        ts + i * seconds_per_accel,
+                        cls._semicircles_to_deg(lon_semicircles),
                         cls._semicircles_to_deg(lat_semicircles), speed,
-                        accel))
+                        cls._adjusted_accel(accel)))
         cls._check_position_continuity(fit_file.messages, positions)
         return cls(positions)
 
@@ -223,9 +225,9 @@ class Track:
         return raw_accel
 
     @classmethod
-    def _adjusted_accels(cls, accels):
+    def _adjusted_accel(cls, accel):
         # The sensor will show -1g in idle. Add 1g to make 0 the baseline.
-        return [a + 1000 for a in accels]
+        return accel + 1000
 
     @classmethod
     def _semicircles_to_deg(cls, semicircles):
@@ -238,9 +240,9 @@ class Track:
         interval_start_ts = None
         for p1, p2 in it.pairwise(positions):
             interval_start_ts = interval_start_ts or p1.ts
-            same_ts = p1.ts == p2.ts
-            one_second_apart = p1.ts + datetime.timedelta(seconds=1) == p2.ts
-            if not same_ts and not one_second_apart:
+            at_most_one_second_apart = (
+                p1.ts + datetime.timedelta(seconds=1) >= p2.ts)
+            if not at_most_one_second_apart:
                 intervals.append((interval_start_ts, p1.ts))
                 interval_start_ts = p2.ts
         if interval_start_ts:
