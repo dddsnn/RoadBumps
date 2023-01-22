@@ -136,4 +136,9 @@ largest at or beyond an upper threshold (default 4000 mg,
 `--spike-upper-limit`). The thresholds for lower and upper limits are also
 drawn as horizontal lines in the top graph.
 
+The zoom level for map tiles is chosen such that plotting the whole track
+should look ok. If you want to zoom in, you may want to specify `--extra-zoom`
+to increase the resolution of tiles. Each increment is a doubling of resolution
+of the tiles.
+
 Plotting of spikes can be disabled with `--no-spikes`.

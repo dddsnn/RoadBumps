@@ -429,13 +429,13 @@ class MapSubplot:
 
         return GeoAxes
 
-    @staticmethod
-    def _zoom_level_for_extent(min_lon, max_lon, min_lat, max_lat):
+    def _zoom_level_for_extent(self, min_lon, max_lon, min_lat, max_lat):
         lon_fraction = (max_lon - min_lon) / 90
         lat_fraction = (max_lat - min_lat) / 180
         doublings = math.log2(1 / max(lon_fraction, lat_fraction))
         # Zoom level 2 as base for the entire world.
-        return 2 + math.ceil(doublings)
+        base_zoom_level = 2 + self.conf.extra_zoom
+        return base_zoom_level + math.ceil(doublings)
 
     @staticmethod
     def _buffered_bounds(bounds, buffer_fraction):
@@ -551,6 +551,7 @@ class AnalysisConfig:
     spike_lower_limit_millig: float
     spike_upper_limit_millig: float
     attenuator: Attenuator
+    extra_zoom: int
 
     def __post_init__(self):
         try:
@@ -625,6 +626,9 @@ def main():
     parser.add_argument(
         '--attenuation', type=Attenuator, default=Attenuator('linear,40,0.5'),
         help='Method of speed attenuation.')
+    parser.add_argument(
+        '--extra-zoom', type=int, default=0,
+        help='Extra zoom level for map tiles with higher resolution.')
     args = parser.parse_args()
     if {p.suffix for p in args.paths} != {'.fit'}:
         raise ValueError(
@@ -633,7 +637,7 @@ def main():
         args.track_time_slice, args.spike_time_slice,
         args.rolling_average_window_duration, args.track_lower_limit,
         args.track_upper_limit, not args.no_spikes, args.spike_lower_limit,
-        args.spike_upper_limit, args.attenuation)
+        args.spike_upper_limit, args.attenuation, args.extra_zoom)
     analyze_files(
         args.paths, save=args.save, save_suffix=args.save_suffix,
         plot_separately=args.plot_separately, conf=analysis_config)
