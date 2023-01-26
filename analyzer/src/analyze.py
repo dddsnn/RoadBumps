@@ -85,13 +85,14 @@ class Attenuator:
             args = spec.split(',')
             self.exponent = next(e for m, e in self._exponents if m == args[0])
             self.speed_cap = float(args[1])
+            assert self.speed_cap > 0
             self.attenuation_at_max_speed = float(args[2])
             assert 0 <= self.attenuation_at_max_speed <= 1
         except Exception as e:
             raise ValueError(
                 'Invalid attenation specification, must be '
-                '"(linear|quadratic|cubic),<v_cap>,<att>" with 0 <= att <= 1.'
-            ) from e
+                '"(linear|quadratic|cubic),<v_cap>,<att>" with 0 <= att <= 1 '
+                'and v_cap > 0.') from e
 
     @property
     def spec(self):
