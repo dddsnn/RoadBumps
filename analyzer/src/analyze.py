@@ -412,8 +412,10 @@ class MapSubplot:
                 spikes.append((mid.lon, mid.lat, max_accel))
         for x, y, accel in spikes:
             accel_over_min = accel - self.conf.spike_lower_limit_millig
-            markersize = 5 + 10 * capped_fraction(
-                accel_over_min, self.conf.spike_upper_limit_millig)
+            spike_range = (
+                self.conf.spike_upper_limit_millig
+                - self.conf.spike_lower_limit_millig)
+            markersize = 5 + 10 * capped_fraction(accel_over_min, spike_range)
             self._axes.plot(
                 x, y, 'o', markersize=markersize, color='purple', alpha=0.5,
                 transform=self.projection.as_geodetic())
