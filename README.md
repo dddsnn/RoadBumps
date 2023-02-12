@@ -105,7 +105,7 @@ as-is, at a speed of `v_cap` `att * a` is subtracted, and in between the amount
 that is subtracted scales linearly.
 
 Attenuation can be specified via `--attenuation` in the format
-`(linear|quadratic|cubic),<v_cap>,<att>` (default `linear,40,0.5`).
+`(linear|quadratic|cubic),<v_cap>,<att>` (default `cubic,40,0.75`).
 
 The threshold speed `v_cap` is also drawn as a horizontal line in the middle
 graph.
@@ -114,25 +114,25 @@ graph.
 
 The right side shows a map plotting the track. The color of the track
 represents the road quality and ranges from green (good) to red (bad). The
-track is split into chunks of several seconds worth of positions (default 5,
+track is split into chunks of several seconds worth of positions (default 20,
 configurable via `--track-time-slice`).
 
 The color is calculated for each such chunk by averaging the attenuated average
 absolute accelerations of positions in it (it's an average of an average). If
-this value is less than or equal a lower threshold (default 100 mg,
+this value is less than or equal a lower threshold (default 0 mg,
 `--track-lower-limit`), the chunk is drawn green. For values beyond an upper
-threshold (default 300 mg, `--track-upper-limit`) the track is assumed to be
+threshold (default 400 mg, `--track-upper-limit`) the track is assumed to be
 maximally bad and drawn red. Everything in between scales linearly between
 these colors. The threshold at which the track is maximally bad is also plotted
 as a horizontal line in the bottom graph.
 
 The map also shows purple dots of varying sizes where the acceleration has
 extreme spikes. The track is again split into chunks of several seconds
-(default 1, `--spike-time-slice`). For each chunk, the maximum absolute
+(default 5, `--spike-time-slice`). For each chunk, the maximum absolute
 acceleration is considered (the actual maximum, not the rolling average). If
-this is past a threshold (default 3000 mg, `--spike-lower-limit`) a dot is
+this is past a threshold (default 2500 mg, `--spike-lower-limit`) a dot is
 drawn. The size scales linearly from smallest at that lower threshold to
-largest at or beyond an upper threshold (default 4000 mg,
+largest at or beyond an upper threshold (default 3000 mg,
 `--spike-upper-limit`). The thresholds for lower and upper limits are also
 drawn as horizontal lines in the top graph.
 

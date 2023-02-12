@@ -594,12 +594,12 @@ def main():
         '--plot-separately', action='store_true',
         help='Plot graphs and map separately.')
     parser.add_argument(
-        '--track-time-slice', type=float, default=5,
+        '--track-time-slice', type=float, default=20,
         help='Duration of chunks in seconds into which the track is sliced '
         'for continuous analysis. Metrics of these chunks are averaged and '
         'drawn as one segment on the map.')
     parser.add_argument(
-        '--spike-time-slice', type=float, default=1,
+        '--spike-time-slice', type=float, default=5,
         help='Duration of chunks in seconds into which the track is sliced '
         'for spike analysis. Only the maximum acceleration value of each '
         'chunk decides whether a spike exists for the chunk.')
@@ -608,26 +608,26 @@ def main():
         help='Lookback into the past in seconds when calculating a rolling '
         'average absolute acceleration for each individual position.')
     parser.add_argument(
-        '--track-lower-limit', type=float, default=100,
+        '--track-lower-limit', type=float, default=0,
         help='Threshold for average attenuated acceleration in millig at or '
         'below which the road quality at a position is considered excellent '
         '(i.e. will be drawn green).')
     parser.add_argument(
-        '--track-upper-limit', type=float, default=300,
+        '--track-upper-limit', type=float, default=400,
         help='Lowest average attenuated acceleration in millig at which a '
         'position is considered maximally bad (i.e. will be drawn red).')
     parser.add_argument(
         '--no-spikes', action='store_true', help='Disable plotting of spikes.')
     parser.add_argument(
-        '--spike-lower-limit', type=float, default=3000,
+        '--spike-lower-limit', type=float, default=2500,
         help='Lowest acceleration in millig needed for a position to be '
         'considered a spike.')
     parser.add_argument(
-        '--spike-upper-limit', type=float, default=4000,
+        '--spike-upper-limit', type=float, default=3000,
         help='Lowest acceleration in millig for a spike to be considered '
         'maximally bad (i.e. largest possible circle).')
     parser.add_argument(
-        '--attenuation', type=Attenuator, default=Attenuator('linear,40,0.5'),
+        '--attenuation', type=Attenuator, default=Attenuator('cubic,40,0.75'),
         help='Method of speed attenuation.')
     parser.add_argument(
         '--extra-zoom', type=int, default=0,
