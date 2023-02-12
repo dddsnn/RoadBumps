@@ -40,8 +40,9 @@ It also adds several fields to hold all raw acceleration values along the z
 axis. This is necessary because it only gets to write data once per second, but
 25 32-bit sensor samples (in milli-g) arrive in that time.
 
-First, each sample is fit into 16 bits: all values are capped to the range
-[-32767, 32768]. The value -32768 is used to represent a null value.
+To encode the data, first each sample is fit into 16 bits: all values are
+capped to the range [-32767, 32767]. The value -32768 is used to represent a
+null value.
 
 A fit file field can hold an array of 8 16-bit signed ints, so 4 such fields
 are created, with names `accel_z_0-8`, `accel_z_8-16`, `accel_z_16-24`, and
