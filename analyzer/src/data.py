@@ -5,6 +5,7 @@ import functools as ft
 import itertools as it
 import logging
 import math
+import pathlib
 import re
 
 import fitparse
@@ -44,182 +45,12 @@ class Position:
 
 class Track:
     EXPECTED_ACCEL_VALUES_PER_MESSAGE = 25
-    logger = logging.getLogger('Track')
 
-    def __init__(self, positions):
+    def __init__(self, positions: list[Position]):
         self._positions = positions
 
-    @classmethod
-    def from_path(cls, file_path):
-        with open(file_path, 'rb') as file:
-            fit_file = fitparse.FitFile(file)
-            fit_file.parse()
-        positions = []
-        for message in fit_file.messages:
-            try:
-                ts, lon_semicircles, lat_semicircles, speed, accels = (
-                    cls._extract_position_data(message))
-            except IncompletePositionData:
-                continue
-            seconds_per_accel = datetime.timedelta(seconds=1 / len(accels))
-            for i, accel in enumerate(accels):
-                positions.append(
-                    Position(
-                        ts + i * seconds_per_accel,
-                        cls._semicircles_to_deg(lon_semicircles),
-                        cls._semicircles_to_deg(lat_semicircles), speed,
-                        cls._adjusted_accel(accel)))
-        cls._check_position_continuity(fit_file.messages, positions)
-        return cls(positions)
-
-    @classmethod
-    def _extract_position_data(cls, message):
-        ts = cls._field_value(message, 'timestamp', datetime.datetime)
-        lon_semicircles = cls._field_value(message, 'position_long')
-        lat_semicircles = cls._field_value(message, 'position_lat')
-        speed = cls._field_value(message, 'enhanced_speed')
-        accel_fields = sorted((
-            field for field in message.fields
-            if field.name.startswith('accel')), key=cls._accel_field_bounds)
-        accel_fields = accel_fields or None
-        data_fields = [lon_semicircles, lat_semicircles, speed, accel_fields]
-        if not all(v is not None for v in [ts] + data_fields):
-            if any(v is not None for v in data_fields):
-                raise IncompletePositionData(
-                    'Not all expected values were present, but some were.')
-            else:
-                raise IncompletePositionData('Not a position message.')
-        cls._assert_valid_accel_fields(accel_fields)
-        accels = cls._extract_accels(accel_fields)
-        return ts, lon_semicircles, lat_semicircles, speed, accels
-
-    @classmethod
-    def _field_value(cls, message, name, field_type=None):
-        try:
-            return next(
-                field.value
-                for field in message.fields
-                if field.name == name and (
-                    field_type is None or isinstance(field.value, field_type)))
-        except StopIteration:
-            return None
-
-    @classmethod
-    def _assert_valid_accel_fields(cls, accel_fields):
-        if cls._accel_field_bounds(accel_fields[0])[0] != 0:
-            raise ParseError('Acceleration fields don\'t start at 0.')
-        for f1, f2 in it.pairwise(accel_fields):
-            _, end1 = cls._accel_field_bounds(f1)
-            start2, _ = cls._accel_field_bounds(f2)
-            if start2 != end1:
-                raise ParseError('Acceleration fields aren\'t consecutive.')
-
-    @classmethod
-    def _accel_field_bounds(cls, field):
-        match = re.match(r'accel_z_(\d+)-(\d+)', field.name)
-        if not match or len(match.groups()) != 2:
-            raise ParseError(f'Invalid acceleration field name {field.name}.')
-        return int(match.group(1)), int(match.group(2))
-
-    @classmethod
-    def _extract_accels(cls, accel_fields):
-        accels = []
-        num_out_of_bounds = 0
-        reached_end = False
-        for f in accel_fields:
-            start, end = cls._accel_field_bounds(f)
-            if len(f.value) != end - start:
-                raise ParseError('Mismatched acceleration value counts.')
-            for raw_accel in f.value:
-                accel = cls._parse_raw_accel(raw_accel)
-                if accel is None:
-                    reached_end = True
-                    continue
-                elif reached_end:
-                    raise ParseError(
-                        'Encountered acceleration value after first null.')
-                if math.isinf(accel):
-                    num_out_of_bounds += 1
-                accels.append(accel)
-        if len(accels) != cls.EXPECTED_ACCEL_VALUES_PER_MESSAGE:
-            raise IncompletePositionData(
-                f'Unexpected number of acceleration values ({len(accels)}).')
-        return accels
-
-    @classmethod
-    def _parse_raw_accel(cls, raw_accel):
-        if raw_accel == -32768:
-            return None
-        if raw_accel == -32767:
-            return float('-inf')
-        if raw_accel == 32767:
-            return float('inf')
-        return raw_accel
-
-    @classmethod
-    def _adjusted_accel(cls, accel):
-        # The sensor will show -1g in idle. Add 1g to make 0 the baseline.
-        return accel + 1000
-
-    @classmethod
-    def _semicircles_to_deg(cls, semicircles):
-        return math.degrees((semicircles * math.pi) / 0x80000000)
-
-    @classmethod
-    def _check_position_continuity(cls, messages, positions):
-        start_ts, end_ts = cls._check_start_end_offsets(messages, positions)
-        intervals = []
-        interval_start_ts = None
-        for p1, p2 in it.pairwise(positions):
-            interval_start_ts = interval_start_ts or p1.ts
-            at_most_one_second_apart = (
-                p1.ts + datetime.timedelta(seconds=1) >= p2.ts)
-            if not at_most_one_second_apart:
-                intervals.append((interval_start_ts, p1.ts))
-                interval_start_ts = p2.ts
-        if interval_start_ts:
-            intervals.append((interval_start_ts, p2.ts))
-        discontinuous_durations = (
-            right_start - left_end
-            for ((_, left_end), (right_start, _)) in it.pairwise(intervals))
-        discontinuous_duration = sum(
-            discontinuous_durations, start=datetime.timedelta())
-        if discontinuous_duration:
-            discontinuous_fraction = (
-                discontinuous_duration / (end_ts - start_ts))
-            cls.logger.info(
-                f'There are {len(intervals)-1} discontinuities totalling a '
-                f'duration of {discontinuous_duration}. This is '
-                f'{discontinuous_fraction*100:.2f}% of the total.')
-
-    @classmethod
-    def _check_start_end_offsets(cls, messages, positions):
-        try:
-            start_ts, end_ts = positions[0].ts, positions[-1].ts
-            duration = end_ts - start_ts
-            messages_start_ts = next(
-                ts for ts in (
-                    cls._field_value(m, 'timestamp', datetime.datetime)
-                    for m in messages) if ts is not None)
-            messages_end_ts = next(
-                ts for ts in (
-                    cls._field_value(m, 'timestamp', datetime.datetime)
-                    for m in reversed(messages)) if ts is not None)
-        except IndexError:
-            cls.logger.warning('No complete positions in track.')
-            return None, None
-        cls.logger.info(
-            f'Parsed track spanning {start_ts} - {end_ts} ({duration}).')
-        start_offset = start_ts - messages_start_ts
-        end_offset = messages_end_ts - end_ts
-        if start_offset or end_offset:
-            cls.logger.info(
-                f'Messages start {start_offset} earlier and end {end_offset} '
-                'later than positions.')
-        return start_ts, end_ts
-
     @property
-    def positions(self):
+    def positions(self) -> list[Position]:
         return self._positions
 
     @property
@@ -233,15 +64,15 @@ class Track:
         return min_lon, min_lat, max_lon, max_lat
 
     @property
-    def tss(self):
+    def tss(self) -> list[datetime.datetime]:
         return [p.ts for p in self.positions]
 
     @property
-    def accels(self):
+    def accels(self) -> list[float]:
         return [p.accel for p in self.positions]
 
     @property
-    def speeds_kph(self):
+    def speeds_kph(self) -> list[float]:
         return [p.speed_kph for p in self.positions]
 
     def rolling_average_absolute_accels(
@@ -291,3 +122,167 @@ class Track:
                 if current_slice:
                     yield current_slice
                 return
+
+
+class FitFileParser:
+    def __init__(self, file_path: pathlib.Path):
+        self.file_path = file_path
+        self._logger = logging.getLogger(type(self).__name__)
+
+    def parse(self) -> Track:
+        with open(self.file_path, 'rb') as file:
+            fit_file = fitparse.FitFile(file)
+            fit_file.parse()
+        positions = []
+        for message in fit_file.messages:
+            try:
+                ts, lon_semicircles, lat_semicircles, speed, accels = (
+                    self._extract_position_data(message))
+            except IncompletePositionData:
+                continue
+            seconds_per_accel = datetime.timedelta(seconds=1 / len(accels))
+            for i, accel in enumerate(accels):
+                positions.append(
+                    Position(
+                        ts + i * seconds_per_accel,
+                        self._semicircles_to_deg(lon_semicircles),
+                        self._semicircles_to_deg(lat_semicircles), speed,
+                        self._adjusted_accel(accel)))
+        self._check_position_continuity(fit_file.messages, positions)
+        return Track(positions)
+
+    def _extract_position_data(self, message):
+        ts = self._field_value(message, 'timestamp', datetime.datetime)
+        lon_semicircles = self._field_value(message, 'position_long')
+        lat_semicircles = self._field_value(message, 'position_lat')
+        speed = self._field_value(message, 'enhanced_speed')
+        accel_fields = sorted((
+            field for field in message.fields
+            if field.name.startswith('accel')), key=self._accel_field_bounds)
+        accel_fields = accel_fields or None
+        data_fields = [lon_semicircles, lat_semicircles, speed, accel_fields]
+        if not all(v is not None for v in [ts] + data_fields):
+            if any(v is not None for v in data_fields):
+                raise IncompletePositionData(
+                    'Not all expected values were present, but some were.')
+            else:
+                raise IncompletePositionData('Not a position message.')
+        self._assert_valid_accel_fields(accel_fields)
+        accels = self._extract_accels(accel_fields)
+        return ts, lon_semicircles, lat_semicircles, speed, accels
+
+    def _field_value(self, message, name, field_type=None):
+        try:
+            return next(
+                field.value
+                for field in message.fields
+                if field.name == name and (
+                    field_type is None or isinstance(field.value, field_type)))
+        except StopIteration:
+            return None
+
+    def _assert_valid_accel_fields(self, accel_fields):
+        if self._accel_field_bounds(accel_fields[0])[0] != 0:
+            raise ParseError('Acceleration fields don\'t start at 0.')
+        for f1, f2 in it.pairwise(accel_fields):
+            _, end1 = self._accel_field_bounds(f1)
+            start2, _ = self._accel_field_bounds(f2)
+            if start2 != end1:
+                raise ParseError('Acceleration fields aren\'t consecutive.')
+
+    def _accel_field_bounds(self, field):
+        match = re.match(r'accel_z_(\d+)-(\d+)', field.name)
+        if not match or len(match.groups()) != 2:
+            raise ParseError(f'Invalid acceleration field name {field.name}.')
+        return int(match.group(1)), int(match.group(2))
+
+    def _extract_accels(self, accel_fields):
+        accels = []
+        num_out_of_bounds = 0
+        reached_end = False
+        for f in accel_fields:
+            start, end = self._accel_field_bounds(f)
+            if len(f.value) != end - start:
+                raise ParseError('Mismatched acceleration value counts.')
+            for raw_accel in f.value:
+                accel = self._parse_raw_accel(raw_accel)
+                if accel is None:
+                    reached_end = True
+                    continue
+                elif reached_end:
+                    raise ParseError(
+                        'Encountered acceleration value after first null.')
+                if math.isinf(accel):
+                    num_out_of_bounds += 1
+                accels.append(accel)
+        if len(accels) != self.EXPECTED_ACCEL_VALUES_PER_MESSAGE:
+            raise IncompletePositionData(
+                f'Unexpected number of acceleration values ({len(accels)}).')
+        return accels
+
+    def _parse_raw_accel(self, raw_accel):
+        if raw_accel == -32768:
+            return None
+        if raw_accel == -32767:
+            return float('-inf')
+        if raw_accel == 32767:
+            return float('inf')
+        return raw_accel
+
+    def _adjusted_accel(self, accel):
+        # The sensor will show -1g in idle. Add 1g to make 0 the baseline.
+        return accel + 1000
+
+    def _semicircles_to_deg(self, semicircles):
+        return math.degrees((semicircles * math.pi) / 0x80000000)
+
+    def _check_position_continuity(self, messages, positions):
+        start_ts, end_ts = self._check_start_end_offsets(messages, positions)
+        intervals = []
+        interval_start_ts = None
+        for p1, p2 in it.pairwise(positions):
+            interval_start_ts = interval_start_ts or p1.ts
+            at_most_one_second_apart = (
+                p1.ts + datetime.timedelta(seconds=1) >= p2.ts)
+            if not at_most_one_second_apart:
+                intervals.append((interval_start_ts, p1.ts))
+                interval_start_ts = p2.ts
+        if interval_start_ts:
+            intervals.append((interval_start_ts, p2.ts))
+        discontinuous_durations = (
+            right_start - left_end
+            for ((_, left_end), (right_start, _)) in it.pairwise(intervals))
+        discontinuous_duration = sum(
+            discontinuous_durations, start=datetime.timedelta())
+        if discontinuous_duration:
+            discontinuous_fraction = (
+                discontinuous_duration / (end_ts - start_ts))
+            self._logger.info(
+                f'There are {len(intervals)-1} discontinuities totalling a '
+                f'duration of {discontinuous_duration}. This is '
+                f'{discontinuous_fraction*100:.2f}% of the total.')
+
+    def _check_start_end_offsets(self, messages, positions):
+        try:
+            start_ts, end_ts = positions[0].ts, positions[-1].ts
+            duration = end_ts - start_ts
+            messages_start_ts = next(
+                ts for ts in (
+                    self._field_value(m, 'timestamp', datetime.datetime)
+                    for m in messages) if ts is not None)
+            messages_end_ts = next(
+                ts for ts in (
+                    self._field_value(m, 'timestamp', datetime.datetime)
+                    for m in reversed(messages)) if ts is not None)
+        except IndexError:
+            self._logger.warning('No complete positions in track.')
+            return None, None
+        self._logger.info(
+            f'Parsed track spanning {start_ts} - {end_ts} ({duration}).')
+        start_offset = start_ts - messages_start_ts
+        end_offset = messages_end_ts - end_ts
+        if start_offset or end_offset:
+            self._logger.info(
+                f'Messages start {start_offset} earlier and end {end_offset} '
+                'later than positions.')
+        return start_ts, end_ts

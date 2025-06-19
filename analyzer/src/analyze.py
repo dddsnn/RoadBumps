@@ -14,8 +14,6 @@ import shapely.geometry
 
 import data
 
-logger = None
-
 
 def setup_logging():
     logging.basicConfig(level=logging.INFO)
@@ -179,7 +177,7 @@ class MapSubplot:
 def analyze_files(paths, save, save_suffix, plot_separately, conf):
     figures_with_base_paths = []
     for path in paths:
-        track = data.Track.from_path(path)
+        track = data.FitFileParser(path).parse()
         figures_with_base_paths.extend(
             plot_track(track, path.with_suffix(''), plot_separately, conf))
     if save:
@@ -362,5 +360,4 @@ def main():
 
 if __name__ == '__main__':
     setup_logging()
-    logger = logging.getLogger(__name__)
     main()
