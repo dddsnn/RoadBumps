@@ -177,7 +177,7 @@ class MapSubplot:
 def analyze_files(paths, save, save_suffix, plot_separately, conf):
     figures_with_base_paths = []
     for path in paths:
-        track = data.FitFileParser(path).parse()
+        track = parse_track(path)
         figures_with_base_paths.extend(
             plot_track(track, path.with_suffix(''), plot_separately, conf))
     if save:
@@ -189,6 +189,19 @@ def analyze_files(paths, save, save_suffix, plot_separately, conf):
             figure.savefig(base_path.parent / file_name)
     else:
         plt.show()
+
+
+def parse_track(path):
+    parser_classes = [data.FitFileParser]
+    exceptions = []
+    for parser_class in parser_classes:
+        try:
+            return parser_class(path).parse()
+        except ValueError as e:
+            exceptions.append(e)
+    raise ValueError(
+        f'no parser understands the file at {path}') from ExceptionGroup(
+            'all parsers failed', exceptions)
 
 
 def plot_track(track, path, plot_separately, conf):
@@ -345,9 +358,6 @@ def main():
         '--extra-zoom', type=int, default=0,
         help='Extra zoom level for map tiles with higher resolution.')
     args = parser.parse_args()
-    if {p.suffix for p in args.paths} != {'.fit'}:
-        raise ValueError(
-            f'One of {args.paths} doesn\'t look like a .fit file.')
     analysis_config = AnalysisConfig(
         args.track_time_slice, args.spike_time_slice,
         args.rolling_average_window_duration, args.track_lower_limit,
