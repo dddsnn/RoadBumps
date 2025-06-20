@@ -1,6 +1,5 @@
 import collections
 import dataclasses as dc
-import datetime
 import functools as ft
 import itertools as it
 import logging
@@ -9,6 +8,11 @@ import pathlib
 import re
 
 import fitparse
+import pendulum
+
+
+def identity(x):
+    return x
 
 
 class ParseError(Exception):
@@ -27,7 +31,7 @@ class IncompletePositionData(Exception):
 
 @dc.dataclass
 class Position:
-    ts: datetime.datetime
+    ts: pendulum.DateTime
     lon: float
     lat: float
     speed: float
@@ -64,7 +68,7 @@ class Track:
         return min_lon, min_lat, max_lon, max_lat
 
     @property
-    def tss(self) -> list[datetime.datetime]:
+    def tss(self) -> list[pendulum.DateTime]:
         return [p.ts for p in self.positions]
 
     @property
@@ -91,7 +95,7 @@ class Track:
             attenuator)
         if not self.positions or key in self.positions[0].analysis_data:
             return
-        window_duration = datetime.timedelta(seconds=window_duration_seconds)
+        window_duration = pendulum.duration(seconds=window_duration_seconds)
         window = collections.deque()
         for position in self.positions:
             window.append(position)
@@ -105,7 +109,7 @@ class Track:
             position.analysis_data[key] = absolute_accel
 
     def time_slices(self, duration_seconds):
-        slice_duration = datetime.timedelta(seconds=duration_seconds)
+        slice_duration = pendulum.duration(seconds=duration_seconds)
         positions = iter(self.positions)
         current_slice = []
         while True:
@@ -140,7 +144,7 @@ class FitFileParser:
                     self._extract_position_data(message))
             except IncompletePositionData:
                 continue
-            seconds_per_accel = datetime.timedelta(seconds=1 / len(accels))
+            seconds_per_accel = pendulum.duration(seconds=1 / len(accels))
             for i, accel in enumerate(accels):
                 positions.append(
                     Position(
@@ -152,7 +156,7 @@ class FitFileParser:
         return Track(positions)
 
     def _extract_position_data(self, message):
-        ts = self._field_value(message, 'timestamp', datetime.datetime)
+        ts = self._field_value(message, 'timestamp', self._pendulum_datetime)
         lon_semicircles = self._field_value(message, 'position_long')
         lat_semicircles = self._field_value(message, 'position_lat')
         speed = self._field_value(message, 'enhanced_speed')
@@ -171,15 +175,21 @@ class FitFileParser:
         accels = self._extract_accels(accel_fields)
         return ts, lon_semicircles, lat_semicircles, speed, accels
 
-    def _field_value(self, message, name, field_type=None):
+    def _field_value(self, message, name, value_converter=identity):
+        for field in message.fields:
+            if field.name == name:
+                try:
+                    return value_converter(field.value)
+                except ValueError:
+                    pass
+        return None
+
+    @staticmethod
+    def _pendulum_datetime(dt):
         try:
-            return next(
-                field.value
-                for field in message.fields
-                if field.name == name and (
-                    field_type is None or isinstance(field.value, field_type)))
-        except StopIteration:
-            return None
+            return pendulum.instance(dt)
+        except Exception as e:
+            raise ValueError('unable to create pendulum datetime') from e
 
     def _assert_valid_accel_fields(self, accel_fields):
         if self._accel_field_bounds(accel_fields[0])[0] != 0:
@@ -243,7 +253,7 @@ class FitFileParser:
         for p1, p2 in it.pairwise(positions):
             interval_start_ts = interval_start_ts or p1.ts
             at_most_one_second_apart = (
-                p1.ts + datetime.timedelta(seconds=1) >= p2.ts)
+                p1.ts + pendulum.duration(seconds=1) >= p2.ts)
             if not at_most_one_second_apart:
                 intervals.append((interval_start_ts, p1.ts))
                 interval_start_ts = p2.ts
@@ -253,7 +263,7 @@ class FitFileParser:
             right_start - left_end
             for ((_, left_end), (right_start, _)) in it.pairwise(intervals))
         discontinuous_duration = sum(
-            discontinuous_durations, start=datetime.timedelta())
+            discontinuous_durations, start=pendulum.duration())
         if discontinuous_duration:
             discontinuous_fraction = (
                 discontinuous_duration / (end_ts - start_ts))
@@ -268,11 +278,11 @@ class FitFileParser:
             duration = end_ts - start_ts
             messages_start_ts = next(
                 ts for ts in (
-                    self._field_value(m, 'timestamp', datetime.datetime)
+                    self._field_value(m, 'timestamp', self._pendulum_datetime)
                     for m in messages) if ts is not None)
             messages_end_ts = next(
                 ts for ts in (
-                    self._field_value(m, 'timestamp', datetime.datetime)
+                    self._field_value(m, 'timestamp', self._pendulum_datetime)
                     for m in reversed(messages)) if ts is not None)
         except IndexError:
             self._logger.warning('No complete positions in track.')

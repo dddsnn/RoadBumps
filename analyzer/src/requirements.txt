@@ -2,5 +2,6 @@ cartopy
 colour
 fitparse
 matplotlib
+pendulum
 scipy
 shapely
