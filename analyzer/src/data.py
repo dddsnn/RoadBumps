@@ -377,20 +377,23 @@ class SenseboxBikeRawAccelerationParser(Parser):
 
     def _add_geolocation_data(self, geodata_records, positions):
         self._parse_and_check_geolocation_timestamps(geodata_records)
+        geodata_pairs = it.pairwise(geodata_records)
+        try:
+            l, r = next(geodata_pairs)
+        except StopIteration:
+            raise ValueError(
+                'There aren\'t even 2 geodatas, this is not useful.')
         for position in positions:
-            try:
-                geodata_pair = self._find_surrounding_geodatas(
-                    geodata_records, position)
-                geodata = min(
-                    geodata_pair,
-                    key=lambda g: g['receiveTime'].diff(position.ts, True))
-            except ValueError:
-                geodata = min(
-                    geodata_records,
-                    key=lambda g: g['receiveTime'].diff(position.ts, True))
-            position.lon = geodata['lon']
-            position.lat = geodata['lat']
-            position.speed = geodata['speed']
+            while position.ts < l['receiveTime']:
+                try:
+                    l, r = next(geodata_pairs)
+                except StopIteration:
+                    break
+            closest = min(
+                (l, r), key=lambda g: g['receiveTime'].diff(position.ts, True))
+            position.lon = closest['lon']
+            position.lat = closest['lat']
+            position.speed = closest['speed']
 
     def _parse_and_check_geolocation_timestamps(self, geodata_records):
         for i, record in enumerate(geodata_records):
@@ -400,11 +403,3 @@ class SenseboxBikeRawAccelerationParser(Parser):
                 prev_ts = geodata_records[i - 1]['receiveTime']
                 if ts < prev_ts:
                     raise ValueError('Geodata timestamps are out of order.')
-
-    def _find_surrounding_geodatas(self, geodata_records, position):
-        try:
-            return next((l, r)
-                        for l, r in it.pairwise(geodata_records)
-                        if l['receiveTime'] <= position.ts <= r['receiveTime'])
-        except StopIteration:
-            raise ValueError
