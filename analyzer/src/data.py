@@ -315,6 +315,9 @@ class SenseboxBikeRawAccelerationParser(Parser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._device_startup_time = None
+        self._lags = []
+        self._num_positions = 0
+        self._num_matching_out_of_bounds = 0
 
     def parse(self) -> Track:
         try:
@@ -328,11 +331,12 @@ class SenseboxBikeRawAccelerationParser(Parser):
         except Exception as e:
             raise ValueError(
                 f'unable to parse {self.file_path} as sensebox data')
+        self._report_status()
         return Track(positions)
 
     def _parse_accelerations(self, recordss):
         positions = []
-        for i, records in enumerate(recordss):
+        for records in recordss:
             receive_time = pendulum.parse(records['receiveTime'])
             if not records['rawAccelerations']:
                 self._logger.warning(
@@ -346,13 +350,10 @@ class SenseboxBikeRawAccelerationParser(Parser):
                 milliseconds=last_accel['millisSinceDeviceStartup'])
             self._device_startup_time = (
                 self._device_startup_time or device_startup_time)
-            lag = self._device_startup_time - device_startup_time
-            if abs(lag.total_seconds()) > 1:
-                self._logger.warning(
-                    f'Significant device time lag of {lag.in_words()} in raw '
-                    f'acceleration records at index {i}.')
+            self._lags.append(self._device_startup_time - device_startup_time)
             positions += self._parse_accelerations_record(
                 records['rawAccelerations'])
+        self._num_positions = len(positions)
         return positions
 
     def _parse_accelerations_record(self, record):
@@ -406,8 +407,10 @@ class SenseboxBikeRawAccelerationParser(Parser):
     def _interpolate_geodata(self, l, r, ts):
         assert l['receiveTime'] < r['receiveTime']
         if ts < l['receiveTime']:
+            self._num_matching_out_of_bounds += 1
             return l
         elif ts > r['receiveTime']:
+            self._num_matching_out_of_bounds += 1
             return r
         timespan = r['receiveTime'] - l['receiveTime']
         l_fraction = (ts - l['receiveTime']) / timespan
@@ -416,3 +419,19 @@ class SenseboxBikeRawAccelerationParser(Parser):
             'lon': l_fraction * l['lon'] + r_fraction * r['lon'],
             'lat': l_fraction * l['lat'] + r_fraction * r['lat'],
             'speed': l_fraction * l['speed'] + r_fraction * r['speed'],}
+
+    def _report_status(self):
+        num_excessive_lag = sum(
+            1 for lag in self._lags if lag.total_seconds() > 1)
+        if num_excessive_lag:
+            self._logger.warning(
+                f'{num_excessive_lag} of {len(self._lags)} blocks of '
+                'acceleration data showed an inconsistency of over 1s.')
+        if self._num_matching_out_of_bounds:
+            percentage = (
+                100 * (self._num_matching_out_of_bounds / self._num_positions))
+            self._logger.warning(
+                f'{self._num_matching_out_of_bounds} of {self._num_positions} '
+                f'({percentage:.2f}%) '
+                'were either before the first or after the last position and '
+                'couldn\'t be interpolated.')
