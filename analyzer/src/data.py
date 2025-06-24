@@ -389,11 +389,10 @@ class SenseboxBikeRawAccelerationParser(Parser):
                     l, r = next(geodata_pairs)
                 except StopIteration:
                     break
-            closest = min(
-                (l, r), key=lambda g: g['receiveTime'].diff(position.ts, True))
-            position.lon = closest['lon']
-            position.lat = closest['lat']
-            position.speed = closest['speed']
+            interpolated = self._interpolate_geodata(l, r, position.ts)
+            position.lon = interpolated['lon']
+            position.lat = interpolated['lat']
+            position.speed = interpolated['speed']
 
     def _parse_and_check_geolocation_timestamps(self, geodata_records):
         for i, record in enumerate(geodata_records):
@@ -403,3 +402,17 @@ class SenseboxBikeRawAccelerationParser(Parser):
                 prev_ts = geodata_records[i - 1]['receiveTime']
                 if ts < prev_ts:
                     raise ValueError('Geodata timestamps are out of order.')
+
+    def _interpolate_geodata(self, l, r, ts):
+        assert l['receiveTime'] < r['receiveTime']
+        if ts < l['receiveTime']:
+            return l
+        elif ts > r['receiveTime']:
+            return r
+        timespan = r['receiveTime'] - l['receiveTime']
+        l_fraction = (ts - l['receiveTime']) / timespan
+        r_fraction = 1 - l_fraction
+        return {
+            'lon': l_fraction * l['lon'] + r_fraction * r['lon'],
+            'lat': l_fraction * l['lat'] + r_fraction * r['lat'],
+            'speed': l_fraction * l['speed'] + r_fraction * r['speed'],}
