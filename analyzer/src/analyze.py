@@ -192,7 +192,8 @@ def analyze_files(paths, save, save_suffix, plot_separately, conf):
 
 
 def parse_track(path):
-    parser_classes = [data.FitFileParser]
+    parser_classes = [
+        data.FitFileParser, data.SenseboxBikeRawAccelerationParser]
     exceptions = []
     for parser_class in parser_classes:
         try:

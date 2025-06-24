@@ -1,7 +1,9 @@
+import abc
 import collections
 import dataclasses as dc
 import functools as ft
 import itertools as it
+import json
 import logging
 import math
 import pathlib
@@ -35,7 +37,9 @@ class Position:
     lon: float
     lat: float
     speed: float
+    """Speed in m/s."""
     accel: float
+    """Vertical acceleration in millig."""
     analysis_data: dict = dc.field(default_factory=dict)
 
     @property
@@ -128,11 +132,20 @@ class Track:
                 return
 
 
-class FitFileParser:
+class Parser(abc.ABC):
+    GRAVITY_MILLIG = 981
+
     def __init__(self, file_path: pathlib.Path):
         self.file_path = file_path
-        self._logger = logging.getLogger(type(self).__name__)
+        self._logger = logging.getLogger(
+            f'{type(self).__name__} for {self.file_path}')
 
+    @abc.abstractmethod
+    def parse(self) -> Track:
+        raise NotImplementedError
+
+
+class FitFileParser(Parser):
     def parse(self) -> Track:
         with open(self.file_path, 'rb') as file:
             fit_file = fitparse.FitFile(file)
@@ -241,7 +254,7 @@ class FitFileParser:
 
     def _adjusted_accel(self, accel):
         # The sensor will show -1g in idle. Add 1g to make 0 the baseline.
-        return accel + 1000
+        return accel + self.GRAVITY_MILLIG
 
     def _semicircles_to_deg(self, semicircles):
         return math.degrees((semicircles * math.pi) / 0x80000000)
@@ -296,3 +309,102 @@ class FitFileParser:
                 f'Messages start {start_offset} earlier and end {end_offset} '
                 'later than positions.')
         return start_ts, end_ts
+
+
+class SenseboxBikeRawAccelerationParser(Parser):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._device_startup_time = None
+
+    def parse(self) -> Track:
+        try:
+            with self.file_path.open() as f:
+                data_json = json.load(f)
+            positions = self._parse_accelerations(
+                data_json['rawAccelerationsRecords'])
+            self._check_timestamp_order(positions)
+            self._add_geolocation_data(
+                data_json['geoLocationDatas'], positions)
+        except Exception as e:
+            raise ValueError(
+                f'unable to parse {self.file_path} as sensebox data')
+        return Track(positions)
+
+    def _parse_accelerations(self, recordss):
+        positions = []
+        for i, records in enumerate(recordss):
+            receive_time = pendulum.parse(records['receiveTime'])
+            if not records['rawAccelerations']:
+                self._logger.warning(
+                    'Empty block of raw accelerations at receive time '
+                    f'{receive_time}, skipping.')
+                continue
+            last_accel = records['rawAccelerations'][-1]
+            # Assume that the time the data was received is the same time the
+            # last acceleration was written.
+            device_startup_time = receive_time - pendulum.duration(
+                milliseconds=last_accel['millisSinceDeviceStartup'])
+            self._device_startup_time = (
+                self._device_startup_time or device_startup_time)
+            lag = self._device_startup_time - device_startup_time
+            if abs(lag.total_seconds()) > 1:
+                self._logger.warning(
+                    f'Significant device time lag of {lag.in_words()} in raw '
+                    f'acceleration records at index {i}.')
+            positions += self._parse_accelerations_record(
+                records['rawAccelerations'])
+        return positions
+
+    def _parse_accelerations_record(self, record):
+        return [
+            Position(
+                ts=self._device_startup_time + pendulum.duration(
+                    milliseconds=data['millisSinceDeviceStartup']),
+                lon=None,
+                lat=None,
+                speed=None,
+                accel=self._adjusted_accel(data['z']),
+            ) for data in record]
+
+    def _adjusted_accel(self, accel):
+        # The sensor will show +1g in idle, in m/s^2 rather than millig.
+        return accel * 100 - self.GRAVITY_MILLIG
+
+    def _check_timestamp_order(self, positions):
+        for l, r in it.pairwise(positions):
+            if l.ts > r.ts:
+                raise ValueError('Acceleration timestamps are out of order.')
+
+    def _add_geolocation_data(self, geodata_records, positions):
+        self._parse_and_check_geolocation_timestamps(geodata_records)
+        for position in positions:
+            try:
+                geodata_pair = self._find_surrounding_geodatas(
+                    geodata_records, position)
+                geodata = min(
+                    geodata_pair,
+                    key=lambda g: g['receiveTime'].diff(position.ts, True))
+            except ValueError:
+                geodata = min(
+                    geodata_records,
+                    key=lambda g: g['receiveTime'].diff(position.ts, True))
+            position.lon = geodata['lon']
+            position.lat = geodata['lat']
+            position.speed = geodata['speed']
+
+    def _parse_and_check_geolocation_timestamps(self, geodata_records):
+        for i, record in enumerate(geodata_records):
+            ts = pendulum.parse(record['receiveTime'])
+            record['receiveTime'] = ts
+            if i > 0:
+                prev_ts = geodata_records[i - 1]['receiveTime']
+                if ts < prev_ts:
+                    raise ValueError('Geodata timestamps are out of order.')
+
+    def _find_surrounding_geodatas(self, geodata_records, position):
+        try:
+            return next((l, r)
+                        for l, r in it.pairwise(geodata_records)
+                        if l['receiveTime'] <= position.ts <= r['receiveTime'])
+        except StopIteration:
+            raise ValueError
