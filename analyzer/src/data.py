@@ -52,8 +52,6 @@ class Position:
 
 
 class Track:
-    EXPECTED_ACCEL_VALUES_PER_MESSAGE = 25
-
     def __init__(self, positions: list[Position]):
         self._positions = positions
 
@@ -146,6 +144,8 @@ class Parser(abc.ABC):
 
 
 class FitFileParser(Parser):
+    EXPECTED_ACCEL_VALUES_PER_MESSAGE = 25
+
     def parse(self) -> Track:
         with open(self.file_path, 'rb') as file:
             fit_file = fitparse.FitFile(file)
