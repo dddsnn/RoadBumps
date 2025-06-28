@@ -325,6 +325,8 @@ class SenseboxBikeRawAccelerationParser(Parser):
                 data_json = json.load(f)
             positions = self._parse_accelerations(
                 data_json['rawAccelerationsRecords'])
+            if not positions:
+                raise ValueError('No positions in file.')
             self._check_timestamp_order(positions)
             self._add_geolocation_data(
                 data_json['geoLocationDatas'], positions)
@@ -377,15 +379,11 @@ class SenseboxBikeRawAccelerationParser(Parser):
                 raise ValueError('Acceleration timestamps are out of order.')
 
     def _add_geolocation_data(self, geodata_records, positions):
-        self._parse_and_check_geolocation_timestamps(geodata_records)
-        geodata_pairs = it.pairwise(geodata_records)
-        try:
-            l, r = next(geodata_pairs)
-        except StopIteration:
-            raise ValueError(
-                'There aren\'t even 2 geodatas, this is not useful.')
+        geodata_pairs = self._iter_geodata_pairs_and_forward_for_timestamp(
+            geodata_records, positions[0].ts)
+        l, r = next(geodata_pairs)
         for position in positions:
-            while position.ts < l['receiveTime']:
+            while position.ts > r['receiveTime']:
                 try:
                     l, r = next(geodata_pairs)
                 except StopIteration:
@@ -394,6 +392,32 @@ class SenseboxBikeRawAccelerationParser(Parser):
             position.lon = interpolated['lon']
             position.lat = interpolated['lat']
             position.speed = interpolated['speed']
+
+    def _iter_geodata_pairs_and_forward_for_timestamp(
+            self, geodata_records, ts):
+        self._parse_and_check_geolocation_timestamps(geodata_records)
+        geodata_pairs = it.pairwise(geodata_records)
+        try:
+            l, r = next(geodata_pairs)
+        except StopIteration:
+            raise ValueError(
+                'There aren\'t even 2 geodatas, this is not useful.')
+        if ts < l['receiveTime']:
+            # Timestamp is before even the first geodata record, start at the
+            # very beginning.
+            return it.pairwise(geodata_records)
+        num_skipped = 0
+        while ts > r['receiveTime']:
+            try:
+                l, r = next(geodata_pairs)
+                num_skipped += 1
+            except StopIteration:
+                # Timestamp is after the last geodata record, start with the
+                # very last pair.
+                return it.islice(
+                    it.pairwise(geodata_records), num_skipped, None)
+        assert l['receiveTime'] <= ts <= r['receiveTime']
+        return it.islice(it.pairwise(geodata_records), num_skipped, None)
 
     def _parse_and_check_geolocation_timestamps(self, geodata_records):
         for i, record in enumerate(geodata_records):
@@ -432,6 +456,5 @@ class SenseboxBikeRawAccelerationParser(Parser):
                 100 * (self._num_matching_out_of_bounds / self._num_positions))
             self._logger.warning(
                 f'{self._num_matching_out_of_bounds} of {self._num_positions} '
-                f'({percentage:.2f}%) '
-                'were either before the first or after the last position and '
-                'couldn\'t be interpolated.')
+                f'({percentage:.2f}%) were either before the first or after '
+                'the last position and couldn\'t be interpolated.')
