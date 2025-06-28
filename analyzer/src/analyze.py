@@ -248,6 +248,7 @@ def add_dynamics_subplots(track, figure, gridspecs, conf):
     accel_axes.legend()
     speed_axes.plot(track.tss, track.speeds_kph, color='black', label='Speed')
     speed_axes.yaxis.set_label_text('km/h')
+    speed_axes.set_yscale('linear')
     speed_axes.hlines([conf.attenuator.speed_cap], track.tss[0], track.tss[-1],
                       linestyles='dashed')
     speed_axes.legend()
